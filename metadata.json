@@ -1,0 +1,7 @@
+{
+  "name": "P-Support: Dental Periodontal Care",
+  "description": "A comprehensive periodontal (P) treatment management application for dental clinics. Track patient progress through standardized treatment phases, store photos, and use AI to analyze dental data and recommend next steps.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
