@@ -5,11 +5,27 @@ import {
   Plus, ChevronRight, Calendar, Clipboard, Camera, Database, Search, 
   Clock, Trash2, FileText, AlertCircle, X, 
   CloudUpload, Check, LogOut, Edit3, Save, 
-  ArrowUp, ArrowDown, Layout, Settings2, Info, UserCheck, ShieldAlert, RefreshCw
+  ArrowUp, ArrowDown, Layout, Settings2, Info, UserCheck, ShieldAlert, RefreshCw, Loader2
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
 import { analyzeStepData } from './geminiService.ts';
 import { syncToGoogleSheet } from './sheetService.ts';
+
+// --- Firebase Setup ---
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, doc, setDoc, getDoc, getDocs, query, where, updateDoc, deleteDoc, orderBy } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyC2-qKqrYAUO8GsVrhMFamlyHIXloBEq6w",
+  authDomain: "p-support.firebaseapp.com",
+  projectId: "p-support",
+  storageBucket: "p-support.firebasestorage.app",
+  messagingSenderId: "444372441032",
+  appId: "1:444372441032:web:6e111721df9d95cc2312fd"
+};
+
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 // --- Utility: Age Calculation ---
 const calculateAge = (birthDateStr: string): number | null => {
@@ -30,23 +46,38 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !password) return;
-    const users: User[] = JSON.parse(localStorage.getItem('p-support-users') || '[]');
-    if (isSignup) {
-      if (users.find(u => u.name === name)) {
-        setError('この名前は登録済みです');
-        return;
+    setLoading(true);
+    setError('');
+
+    try {
+      const userRef = doc(db, 'users', name);
+      const userSnap = await getDoc(userRef);
+
+      if (isSignup) {
+        if (userSnap.exists()) {
+          setError('この名前は既に登録されています');
+        } else {
+          const newUser = { name, password };
+          await setDoc(userRef, newUser);
+          onLogin(newUser);
+        }
+      } else {
+        if (userSnap.exists() && userSnap.data().password === password) {
+          onLogin(userSnap.data() as User);
+        } else {
+          setError('認証に失敗しました。名前またはパスワードが違います');
+        }
       }
-      const newUser = { name, password };
-      localStorage.setItem('p-support-users', JSON.stringify([...users, newUser]));
-      onLogin(newUser);
-    } else {
-      const user = users.find(u => u.name === name && u.password === password);
-      if (user) onLogin(user);
-      else setError('認証に失敗しました');
+    } catch (err) {
+      console.error(err);
+      setError('サーバー接続エラーが発生しました');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -58,7 +89,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
             <Layout size={32} />
           </div>
           <h1 className="text-2xl font-bold text-slate-800 tracking-tight">P-Support</h1>
-          <p className="text-slate-400 text-sm font-medium">Dental Periodontal Care</p>
+          <p className="text-slate-400 text-sm font-medium">Anywhere, Dental Periodontal Care</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input 
@@ -72,12 +103,15 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
             value={password} onChange={e => setPassword(e.target.value)}
           />
           {error && <p className="text-red-500 text-xs text-center font-bold">{error}</p>}
-          <button className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-bold hover:bg-black transition shadow-lg active:scale-95">
-            {isSignup ? 'アカウント作成' : 'ログイン'}
+          <button 
+            disabled={loading}
+            className="w-full bg-slate-900 text-white py-3.5 rounded-xl font-bold hover:bg-black transition shadow-lg active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {loading ? <Loader2 className="animate-spin" size={18} /> : (isSignup ? 'アカウント作成' : 'ログイン')}
           </button>
         </form>
         <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-6 text-xs text-slate-400 hover:text-blue-600 transition font-medium">
-          {isSignup ? '← ログインに戻る' : '新規登録はこちら'}
+          {isSignup ? '← ログインに戻る' : '新規登録はこちら（クラウド同期用）'}
         </button>
       </div>
     </div>
@@ -94,7 +128,7 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">患者様リスト</h1>
-          <p className="text-slate-500 text-sm">全 {patients.length} 名の登録</p>
+          <p className="text-slate-500 text-sm">クラウド同期済み: 全 {patients.length} 名</p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -149,7 +183,7 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
 };
 
 // --- PatientDetail ---
-const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients: PatientRecord[], onUpdate: (p: PatientRecord) => void, onDelete: (id: string) => void, currentUser: User }) => {
+const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientRecord[], onUpdate: (p: PatientRecord) => void, currentUser: User }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const patient = patients.find(p => p.id === id);
@@ -171,7 +205,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
     }
   }, [patient, activeId]);
 
-  if (!patient) return <Navigate to="/" />;
+  if (!patient) return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-blue-500" /></div>;
 
   const age = calculateAge(patient.birthDate);
   const activeStep = patient.plan.find(s => s.id === activeId) || patient.plan[0];
@@ -279,7 +313,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
              </div>
              <div className="flex gap-2 w-full sm:w-auto">
                 <button onClick={async () => { setIsSyncing(true); await syncToGoogleSheet(patient); setIsSyncing(false); alert('スプレッドシートへの同期が完了しました'); }} disabled={isSyncing} className="flex-1 sm:flex-none bg-slate-900 text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center justify-center shadow-sm hover:bg-black transition-all">
-                  <CloudUpload size={16} className="mr-2" /> 同期
+                  <CloudUpload size={16} className="mr-2" /> スプレッドシートへ同期
                 </button>
              </div>
           </div>
@@ -449,30 +483,16 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
                   ) : <><Database size={18} className="mr-2 text-blue-400" /> AI臨床アドバイザーに相談</>}
                 </button>
                 {aiResult && (
-                  <div className={`mt-6 p-6 border rounded-2xl text-sm whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative ${aiResult.includes("【エラー】") || aiResult.includes("【Googleの回答") ? "bg-red-50 border-red-100 text-red-900" : "bg-blue-50/30 border-blue-100 text-slate-700"}`}>
+                  <div className={`mt-6 p-6 border rounded-2xl text-sm whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative ${aiResult.includes("【重要：APIキー") ? "bg-red-50 border-red-100 text-red-900" : "bg-blue-50/30 border-blue-100 text-slate-700"}`}>
                     <div className="flex items-center gap-2 mb-3">
-                       <div className={`${aiResult.includes("【エラー】") || aiResult.includes("【Googleの回答") ? "bg-red-600" : "bg-blue-600"} p-1.5 rounded-lg text-white`}>
+                       <div className={`${aiResult.includes("【重要：APIキー") ? "bg-red-600" : "bg-blue-600"} p-1.5 rounded-lg text-white`}>
                          <Database size={14} />
                        </div>
-                       <p className="font-bold text-[11px] uppercase tracking-widest">{aiResult.includes("【エラー】") ? "エラーレポート" : "AI分析レポート"}</p>
+                       <p className="font-bold text-[11px] uppercase tracking-widest">{aiResult.includes("【重要：APIキー") ? "システムアラート" : "AI分析レポート"}</p>
                     </div>
                     <div className="text-sm prose prose-slate max-w-none">
                       {aiResult}
                     </div>
-                    {aiResult.includes("Secrets") && (
-                      <div className="mt-4 p-4 bg-white/50 border border-slate-200 rounded-xl flex items-start gap-3">
-                        <ShieldAlert size={18} className="shrink-0 text-red-500 mt-0.5" />
-                        <div className="text-xs text-slate-600">
-                          <p className="font-bold text-slate-800 mb-1">現在の環境でのAPIキー設定方法</p>
-                          <ol className="list-decimal list-inside space-y-1">
-                            <li>サイドバーの <b>Secrets（鍵アイコン🔒）</b> を開く</li>
-                            <li><b>Name</b> に <code className="bg-slate-100 px-1 rounded">API_KEY</code> と入力（大文字・アンダースコア）</li>
-                            <li><b>Value</b> に取得したキーを貼り付け</li>
-                            <li>保存ボタンを押し、<b>一度ブラウザを更新</b>してください</li>
-                          </ol>
-                        </div>
-                      </div>
-                    )}
                   </div>
                 )}
               </div>
@@ -508,7 +528,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
               </div>
               <div className="pt-4">
                 <button onClick={handleSaveProfile} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-100 flex items-center justify-center gap-2">
-                  <Save size={18} /> 保存する
+                  <Save size={18} /> クラウドに保存する
                 </button>
               </div>
             </div>
@@ -525,17 +545,41 @@ export default function App() {
     const s = sessionStorage.getItem('p-auth');
     return s ? JSON.parse(s) : null;
   });
-  const [patients, setPatients] = useState<PatientRecord[]>(() => {
-    const s = localStorage.getItem('p-patients');
-    return s ? JSON.parse(s) : [];
-  });
+  const [patients, setPatients] = useState<PatientRecord[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
 
+  // --- Data Fetching ---
   useEffect(() => {
-    localStorage.setItem('p-patients', JSON.stringify(patients));
-  }, [patients]);
+    if (user) {
+      const fetchPatients = async () => {
+        setLoading(true);
+        try {
+          const q = query(collection(db, "patients"), orderBy("lastVisit", "desc"));
+          const querySnapshot = await getDocs(q);
+          const data = querySnapshot.docs.map(doc => doc.data() as PatientRecord);
+          setPatients(data);
+        } catch (err) {
+          console.error("Error fetching patients:", err);
+        } finally {
+          setLoading(false);
+        }
+      };
+      fetchPatients();
+    }
+  }, [user]);
 
-  const addPatient = (name: string, pid: string, bday: string) => {
+  const updatePatientInDb = async (p: PatientRecord) => {
+    try {
+      await setDoc(doc(db, "patients", p.id), p);
+      setPatients(prev => prev.map(o => o.id === p.id ? p : o));
+    } catch (err) {
+      console.error("Error updating patient:", err);
+      alert("保存に失敗しました");
+    }
+  };
+
+  const addPatient = async (name: string, pid: string, bday: string) => {
     if (!name || !pid) return;
     const newP: PatientRecord = {
       id: Date.now().toString(),
@@ -548,8 +592,15 @@ export default function App() {
         updatedBy: user?.name
       }))
     };
-    setPatients([newP, ...patients]);
-    setIsModalOpen(false);
+    
+    try {
+      await setDoc(doc(db, "patients", newP.id), newP);
+      setPatients([newP, ...patients]);
+      setIsModalOpen(false);
+    } catch (err) {
+      console.error("Error adding patient:", err);
+      alert("登録に失敗しました");
+    }
   };
 
   if (!user) return <LoginPage onLogin={u => { setUser(u); sessionStorage.setItem('p-auth', JSON.stringify(u)); }} />;
@@ -583,15 +634,21 @@ export default function App() {
         </nav>
         
         <main className="flex-1 max-w-7xl mx-auto w-full p-6 sm:p-10">
-          <Routes>
-            <Route path="/" element={<PatientList patients={patients} />} />
-            <Route path="/patient/:id" element={<PatientDetail 
-              patients={patients} 
-              currentUser={user}
-              onUpdate={p => setPatients(patients.map(o => o.id === p.id ? p : o))}
-              onDelete={id => setPatients(patients.filter(o => o.id !== id))}
-            />} />
-          </Routes>
+          {loading && patients.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-64 text-slate-400 gap-4">
+              <Loader2 className="animate-spin" size={40} />
+              <p className="text-sm font-bold uppercase tracking-widest">データを同期中...</p>
+            </div>
+          ) : (
+            <Routes>
+              <Route path="/" element={<PatientList patients={patients} />} />
+              <Route path="/patient/:id" element={<PatientDetail 
+                patients={patients} 
+                currentUser={user}
+                onUpdate={updatePatientInDb}
+              />} />
+            </Routes>
+          )}
         </main>
 
         {isModalOpen && (

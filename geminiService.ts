@@ -3,38 +3,26 @@ import { GoogleGenAI } from "@google/genai";
 import { TreatmentStep, PatientRecord } from "./types.ts";
 
 export const analyzeStepData = async (patient: PatientRecord, step: TreatmentStep) => {
-  // 1. 全ての可能性を確認
-  const envKey = process.env.API_KEY;
-  
-  // デバッグ用情報の構築
-  let debugStatus = "";
-  if (typeof envKey === "undefined") debugStatus = "型: undefined (存在しません)";
-  else if (envKey === null) debugStatus = "型: null (空です)";
-  else if (envKey === "") debugStatus = "型: string (空文字です)";
-  else {
-    const safeDisplay = String(envKey).substring(0, 4);
-    debugStatus = `型: string, 長さ: ${String(envKey).length}文字, 先頭4文字: 「${safeDisplay}」`;
-  }
+  // 1. 環境変数の取得
+  const envKey = process.env.API_KEY || "";
+  const apiKey = envKey.trim().replace(/^["']|["']$/g, "");
 
-  // 2. クリーニング
-  const apiKey = String(envKey || "").trim().replace(/^["']|["']$/g, "");
+  // 2. プレースホルダーまたは無効なキーの判定
+  if (apiKey === "PLACEHOLDER_API_KEY" || !apiKey || !apiKey.startsWith("AIza")) {
+    const isPlaceholder = apiKey === "PLACEHOLDER_API_KEY";
+    
+    return `【重要：APIキーの設定が必要です】
 
-  // 3. 判定と詳細エラー表示
-  if (!apiKey || apiKey === "undefined" || apiKey === "null" || !apiKey.startsWith("AIza")) {
-    return `【徹底診断：APIキーが正しく認識されていません】
+現在、${isPlaceholder ? "「仮のキー(PLACEHOLDER)」" : "「不適切な値」"}が読み込まれています。
+Vercelの設定ではなく、今お使いの「このエディタ環境」にキーを教える必要があります。
 
-■ システムが検知した現在の状況:
-${debugStatus}
+■ 解決手順:
+1. 画面左側のサイドバーにある 🔒 (Secrets / 鍵マーク) をクリック。
+2. Name に 「API_KEY」 と入力。
+3. Value に Google AI Studio で取得した 「AIza...」 で始まるキーを貼り付け。
+4. 保存後、必ず『ブラウザをリロード(更新)』してください。
 
-■ 考えられる原因と対策:
-1. 【最有力】コードがまだ更新されていない
-   → この「徹底診断」という文字が表示されているなら、コードは最新です。
-2. 【Vercelの設定ミス】
-   → Environment Variables の Name が「API_KEY」(全て大文字) であるか再確認してください。
-3. 【ビルドの未反映】
-   → Vercelの「Deployments」メニューから、最新のデプロイの右側にある「...」を押し、「Redeploy」を実行してください。その際「Existing Build Cache」を使わない設定があればそちらを選んでください。
-
-※もし先頭4文字が「AIza」以外（例: proc... など）の場合、ビルドツールが環境変数を文字列として埋め込めていない可能性があります。`;
+※Vercelの管理画面で設定した変数は、ここ（編集画面）には反映されません。`;
   }
 
   try {
@@ -54,10 +42,11 @@ ${debugStatus}
     }
 
     parts.push({
-      text: `歯科専門AIアドバイザーとして分析してください。
+      text: `歯科専門AIアドバイザーとして以下の情報を分析し、日本語で回答してください。
 患者: ${patient.name}
 工程: ${step.label}
-メモ: ${step.notes}`
+処置メモ: ${step.notes || "なし"}
+患者特記事項: ${patient.profileNotes || "なし"}`
     });
 
     const response = await ai.models.generateContent({
@@ -65,7 +54,7 @@ ${debugStatus}
       contents: [{ parts }],
     });
 
-    return response.text || "AIの回答が空でした。";
+    return response.text || "AIからの応答が空でした。";
     
   } catch (error: any) {
     return `【API実行エラー】\n${error.message}`;
