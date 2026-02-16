@@ -24,6 +24,7 @@ export interface TreatmentStep {
   status: PStepStatus;
   notes: string;
   files: PatientFile[];
+  updatedBy?: string; // 最終更新担当者
 }
 
 export interface PatientRecord {
@@ -31,6 +32,7 @@ export interface PatientRecord {
   patientId: string;
   name: string;
   birthDate: string;
+  profileNotes: string; // プロフィールメモ
   plan: TreatmentStep[];
   createdAt: string;
   lastVisit: string;

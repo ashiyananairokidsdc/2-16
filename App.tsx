@@ -5,7 +5,7 @@ import {
   Plus, ChevronRight, Calendar, Clipboard, Camera, Database, Search, 
   CheckCircle2, Clock, Trash2, FileText, AlertCircle, X, 
   CloudUpload, Check, LogOut, User as UserIcon, Edit3, Save, 
-  ArrowUp, ArrowDown, Layout, UserCircle, Settings2
+  ArrowUp, ArrowDown, Layout, UserCircle, Settings2, Info, UserCheck
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
 import { analyzeStepData } from './geminiService.ts';
@@ -62,7 +62,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input 
-            type="text" placeholder="名前" required
+            type="text" placeholder="利用者名" required
             className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-sm"
             value={name} onChange={e => setName(e.target.value)}
           />
@@ -94,7 +94,7 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">患者リスト</h1>
-          <p className="text-slate-500 text-sm">全 {patients.length} 件のデータ</p>
+          <p className="text-slate-500 text-sm">全 {patients.length} 件</p>
         </div>
         <div className="relative w-full sm:w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
@@ -120,10 +120,10 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
             const currentStep = p.plan.find(s => s.status === '実施中')?.label || '完了';
 
             return (
-              <Link key={p.id} to={`/patient/${p.id}`} className="bg-white rounded-2xl border border-slate-200 hover:border-blue-300 hover:shadow-xl hover:shadow-slate-200/50 transition-all p-6 flex flex-col group">
+              <Link key={p.id} to={`/patient/${p.id}`} className="bg-white rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-xl hover:shadow-slate-200/50 transition-all p-6 flex flex-col group">
                 <div className="flex justify-between items-start mb-4">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest bg-slate-50 px-2 py-1 rounded">ID: {p.patientId}</span>
-                  <div className={`text-[10px] font-bold px-2 py-1 rounded-full ${progressPercent === 100 ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                  <div className={`text-xs font-black px-2.5 py-1 rounded-lg shadow-sm ${progressPercent === 100 ? 'bg-green-500 text-white' : 'bg-blue-600 text-white'}`}>
                     {progressPercent}%
                   </div>
                 </div>
@@ -132,11 +132,11 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
                 
                 <div className="mt-auto space-y-3">
                   <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                    <span>現在</span>
-                    <span className="truncate ml-2">{currentStep}</span>
+                    <span>進捗状況</span>
+                    <span className="truncate ml-2 text-slate-600">{currentStep}</span>
                   </div>
-                  <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-blue-500 transition-all duration-700" style={{ width: `${progressPercent}%` }} />
+                  <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-blue-500 transition-all duration-700 shadow-sm" style={{ width: `${progressPercent}%` }} />
                   </div>
                 </div>
               </Link>
@@ -149,7 +149,7 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
 };
 
 // --- PatientDetail ---
-const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientRecord[], onUpdate: (p: PatientRecord) => void, onDelete: (id: string) => void }) => {
+const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients: PatientRecord[], onUpdate: (p: PatientRecord) => void, onDelete: (id: string) => void, currentUser: User }) => {
   const { id } = useParams();
   const navigate = useNavigate();
   const patient = patients.find(p => p.id === id);
@@ -179,7 +179,12 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   const progressPercent = patient.plan.length > 0 ? Math.round((completedCount / patient.plan.length) * 100) : 0;
 
   const handleUpdateStep = (updates: Partial<TreatmentStep>) => {
-    const newPlan = patient.plan.map(s => s.id === activeId ? { ...s, ...updates } : s);
+    const newPlan = patient.plan.map(s => {
+      if (s.id === activeId) {
+        return { ...s, ...updates, updatedBy: currentUser.name };
+      }
+      return s;
+    });
     onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
   };
 
@@ -194,7 +199,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
 
   const addStep = () => {
     const newStep: TreatmentStep = {
-      id: Date.now().toString(), label: '新規フェーズ', status: PStepStatus.PENDING, notes: '', files: []
+      id: Date.now().toString(), label: '新規フェーズ', status: PStepStatus.PENDING, notes: '', files: [], updatedBy: currentUser.name
     };
     handleUpdatePlan([...patient.plan, newStep]);
   };
@@ -240,32 +245,52 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-in fade-in duration-700">
       {/* Refined Header */}
-      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-        <div className="flex-1">
-          <button onClick={() => navigate('/')} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 mb-3 flex items-center transition-colors uppercase tracking-wider">
-            <ChevronRight className="rotate-180 mr-1" size={14} /> 一覧に戻る
-          </button>
-          <div className="flex items-center gap-4 mb-2">
-            <h2 className="text-2xl font-bold text-slate-800">{patient.name}</h2>
-            <button onClick={() => setIsProfileModalOpen(true)} className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all">
-              <Edit3 size={16} />
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+          <div className="flex-1">
+            <button onClick={() => navigate('/')} className="text-[10px] font-bold text-slate-400 hover:text-blue-600 mb-3 flex items-center transition-colors uppercase tracking-wider">
+              <ChevronRight className="rotate-180 mr-1" size={14} /> 一覧に戻る
             </button>
+            <div className="flex items-center gap-4 mb-2">
+              <h2 className="text-2xl font-bold text-slate-800">{patient.name}</h2>
+              <button onClick={() => setIsProfileModalOpen(true)} className="p-1.5 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-all">
+                <Edit3 size={16} />
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500">
+              <span className="flex items-center"><Calendar size={14} className="mr-1.5 text-slate-300" /> {patient.birthDate ? `${patient.birthDate.replace(/-/g, '/')} (${age}歳)` : '--'}</span>
+              <span className="text-slate-200">|</span>
+              <span className="flex items-center"><Clock size={14} className="mr-1.5 text-slate-300" /> 最終来院: {patient.lastVisit}</span>
+              <span className="text-slate-200">|</span>
+              <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">ID: {patient.patientId}</span>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-500">
-            <span className="flex items-center"><Calendar size={14} className="mr-1.5 text-slate-300" /> {patient.birthDate ? `${patient.birthDate.replace(/-/g, '/')} (${age}歳)` : '--'}</span>
-            <span className="text-slate-200">|</span>
-            <span className="flex items-center"><Clock size={14} className="mr-1.5 text-slate-300" /> 最終来院: {patient.lastVisit}</span>
-            <span className="text-slate-200">|</span>
-            <span className="text-[10px] font-bold text-slate-400 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">ID: {patient.patientId}</span>
+          
+          <div className="flex flex-col items-center sm:items-end gap-3 w-full sm:w-auto">
+             <div className="bg-blue-50 border border-blue-100 px-6 py-4 rounded-2xl flex flex-col items-center min-w-[120px] shadow-sm">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-[0.2em] mb-1">現在の進捗</span>
+                <div className="text-4xl font-black text-blue-600 tracking-tighter">{progressPercent}%</div>
+             </div>
+             <div className="flex gap-2 w-full sm:w-auto">
+                <button onClick={async () => { setIsSyncing(true); await syncToGoogleSheet(patient); setIsSyncing(false); alert('同期完了'); }} disabled={isSyncing} className="flex-1 sm:flex-none bg-slate-900 text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center justify-center shadow-sm hover:bg-black transition-all">
+                  <CloudUpload size={16} className="mr-2" /> クラウド同期
+                </button>
+             </div>
           </div>
         </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={() => {if(confirm('患者データを削除しますか？')) { onDelete(patient.id); navigate('/'); }}} className="flex-1 sm:flex-none px-4 py-2 text-red-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition text-sm font-medium border border-transparent hover:border-red-100">
-            削除
-          </button>
-          <button onClick={async () => { setIsSyncing(true); await syncToGoogleSheet(patient); setIsSyncing(false); alert('同期完了'); }} disabled={isSyncing} className="flex-1 sm:flex-none bg-slate-900 text-white px-6 py-2 rounded-xl text-sm font-bold flex items-center justify-center shadow-sm hover:bg-black transition-all">
-            <CloudUpload size={16} className="mr-2" /> 同期
-          </button>
+
+        {/* Profile Note Area */}
+        <div className="pt-6 border-t border-slate-100">
+           <div className="flex items-center gap-2 mb-2 text-slate-400">
+              <Info size={14} />
+              <label className="text-[10px] font-bold uppercase tracking-widest">特記事項 (全身疾患・要望など)</label>
+           </div>
+           <textarea 
+             className="w-full p-4 bg-slate-50/50 border border-slate-200 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm leading-relaxed min-h-[80px]"
+             placeholder="アレルギー、治療への要望、共有事項を入力..."
+             value={patient.profileNotes || ''}
+             onChange={e => onUpdate({...patient, profileNotes: e.target.value})}
+           />
         </div>
       </div>
 
@@ -275,18 +300,17 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-24">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest flex items-center">
-                <Settings2 size={14} className="mr-2" /> ロードマップ
+                <Settings2 size={14} className="mr-2" /> 治療ロードマップ
               </h3>
               <button 
                 onClick={() => setIsPlanEditMode(!isPlanEditMode)}
-                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${isPlanEditMode ? 'bg-green-600 text-white' : 'text-blue-600 hover:bg-blue-50'}`}
+                className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${isPlanEditMode ? 'bg-green-600 text-white shadow-sm' : 'text-blue-600 hover:bg-blue-50'}`}
               >
                 {isPlanEditMode ? '編集終了' : '工程編集'}
               </button>
             </div>
 
             <div className="relative space-y-1">
-              {/* Timeline Line */}
               <div className="absolute left-[15px] top-3 bottom-3 w-px bg-slate-100 -z-0" />
               
               {patient.plan.map((s, i) => (
@@ -294,14 +318,14 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                   <div className={`flex items-center gap-3 py-1.5 transition-all ${isPlanEditMode ? '' : 'cursor-pointer'}`} onClick={() => !isPlanEditMode && setActiveId(s.id)}>
                     <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${
                       s.status === '完了' ? 'bg-green-500 border-green-500 text-white' : 
-                      s.status === '実施中' ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100' : 
+                      s.status === '実施中' ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 ring-4 ring-blue-50' : 
                       'bg-white border-slate-200 text-slate-300'
                     }`}>
                       {s.status === '完了' ? <Check size={14} strokeWidth={3} /> : <span className="text-[10px] font-bold">{i + 1}</span>}
                     </div>
                     
                     <div className={`flex-1 min-w-0 p-3 rounded-xl border transition-all ${
-                      activeId === s.id && !isPlanEditMode ? 'bg-blue-50 border-blue-100 shadow-sm' : 'bg-white border-transparent'
+                      activeId === s.id && !isPlanEditMode ? 'bg-blue-50 border-blue-100 shadow-sm ring-1 ring-blue-50' : 'bg-white border-transparent'
                     }`}>
                       {isPlanEditMode ? (
                         <div className="flex items-center gap-2">
@@ -314,10 +338,12 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                           />
                           <button onClick={(e) => { e.stopPropagation(); moveStep(i, 'up'); }} className="text-slate-300 hover:text-slate-600"><ArrowUp size={14}/></button>
                           <button onClick={(e) => { e.stopPropagation(); moveStep(i, 'down'); }} className="text-slate-300 hover:text-slate-600"><ArrowDown size={14}/></button>
+                          <button onClick={(e) => { e.stopPropagation(); if(confirm('削除しますか？')) handleUpdatePlan(patient.plan.filter(p => p.id !== s.id)); }} className="text-slate-200 hover:text-red-500"><Trash2 size={14}/></button>
                         </div>
                       ) : (
-                        <div>
+                        <div className="flex justify-between items-center">
                           <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
+                          {s.updatedBy && <span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold">{s.updatedBy.charAt(0)}</span>}
                         </div>
                       )}
                     </div>
@@ -330,16 +356,6 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                   <Plus size={14} className="mr-1" /> 工程を追加
                 </button>
               )}
-            </div>
-
-            <div className="mt-8 pt-6 border-t border-slate-100">
-              <div className="flex justify-between items-center mb-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">全工程進捗</span>
-                <span className="text-blue-600 font-bold text-sm">{progressPercent}%</span>
-              </div>
-              <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
-              </div>
             </div>
           </div>
         </div>
@@ -354,15 +370,24 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                 </div>
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">{activeStep.label}</h3>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">現在の工程</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">状況</p>
+                     {activeStep.updatedBy && (
+                       <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                         <UserCheck size={10} className="mr-1" /> 担当: {activeStep.updatedBy}
+                       </span>
+                     )}
+                  </div>
                 </div>
               </div>
-              <select 
-                value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
-                className="text-xs font-bold border border-slate-200 rounded-xl px-4 py-2 outline-none bg-white shadow-sm cursor-pointer hover:border-slate-300 transition-all"
-              >
-                {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
+              <div className="flex items-center gap-3">
+                <select 
+                  value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
+                  className="text-xs font-bold border border-slate-200 rounded-xl px-4 py-2 outline-none bg-white shadow-sm cursor-pointer hover:border-slate-300 transition-all"
+                >
+                  {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
             </div>
             
             <div className="p-6 sm:p-8 flex-1 space-y-8">
@@ -372,8 +397,8 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                     <FileText size={12} className="mr-2" /> 処置内容・経過メモ
                   </label>
                   <textarea 
-                    className="w-full h-[300px] p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm leading-relaxed"
-                    placeholder="こちらに詳細を記入..."
+                    className="w-full h-[300px] p-5 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-50 outline-none transition-all text-sm leading-relaxed"
+                    placeholder="治療の内容、患者の反応などを記録..."
                     value={activeStep.notes}
                     onChange={e => handleUpdateStep({ notes: e.target.value })}
                   />
@@ -383,8 +408,8 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                     <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
                       <Camera size={12} className="mr-2" /> 視覚資料 (写真)
                     </label>
-                    <label className="cursor-pointer bg-slate-100 text-slate-600 px-3 py-1.5 rounded-lg text-[10px] font-bold hover:bg-slate-200 transition-all border border-slate-200">
-                      追加
+                    <label className="cursor-pointer bg-white text-slate-600 px-4 py-2 rounded-xl text-[10px] font-bold hover:bg-slate-50 transition-all border border-slate-200 shadow-sm active:scale-95">
+                      + 追加
                       <input type="file" className="hidden" onChange={handleFile} />
                     </label>
                   </div>
@@ -400,9 +425,9 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                       </div>
                     ))}
                     {activeStep.files.length === 0 && (
-                      <div className="col-span-2 py-16 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-100 text-slate-300">
+                      <div className="col-span-2 py-16 text-center bg-slate-50/50 rounded-2xl border-2 border-dashed border-slate-100 text-slate-300">
                         <Camera size={24} className="mx-auto mb-2 opacity-30" />
-                        <p className="text-[10px] font-bold uppercase tracking-widest">No Photos</p>
+                        <p className="text-[10px] font-bold uppercase tracking-widest">画像なし</p>
                       </div>
                     )}
                   </div>
@@ -414,13 +439,15 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
                   onClick={runAi} disabled={isAnalyzing}
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-md active:scale-[0.99] disabled:opacity-50"
                 >
-                  {isAnalyzing ? "分析中..." : <><AlertCircle size={18} className="mr-2 text-blue-400" /> AI診断アシスタントを起動</>}
+                  {isAnalyzing ? (
+                    <div className="flex items-center"><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" /> 分析中...</div>
+                  ) : <><AlertCircle size={18} className="mr-2 text-blue-400" /> AI診断アシスタント</>}
                 </button>
                 {aiResult && (
-                  <div className="mt-6 p-6 bg-blue-50/50 border border-blue-100 rounded-2xl text-sm text-slate-700 whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300">
+                  <div className="mt-6 p-6 bg-indigo-50/30 border border-indigo-100 rounded-2xl text-sm text-slate-700 whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative">
                     <div className="flex items-center gap-2 mb-3">
-                       <Database size={14} className="text-blue-600" />
-                       <p className="font-bold text-blue-900 text-xs uppercase tracking-widest">Gemini AI Analysis</p>
+                       <Database size={14} className="text-indigo-600" />
+                       <p className="font-bold text-indigo-900 text-[10px] uppercase tracking-widest">AI Report</p>
                     </div>
                     <div className="text-slate-700 text-sm">
                       {aiResult}
@@ -433,7 +460,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
         </div>
       </div>
 
-      {/* Edit Modal */}
+      {/* Profile Modal */}
       {isProfileModalOpen && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[100] flex items-center justify-center p-6">
           <div className="bg-white p-10 rounded-3xl w-full max-w-md shadow-2xl animate-in zoom-in duration-300">
@@ -460,7 +487,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
               </div>
               <div className="pt-4">
                 <button onClick={handleSaveProfile} className="w-full bg-blue-600 text-white py-4 rounded-xl font-bold hover:bg-blue-700 transition-all active:scale-95 shadow-lg shadow-blue-100 flex items-center justify-center gap-2">
-                  <Save size={18} /> 保存
+                  <Save size={18} /> 更新を保存
                 </button>
               </div>
             </div>
@@ -491,12 +518,13 @@ export default function App() {
     if (!name || !pid) return;
     const newP: PatientRecord = {
       id: Date.now().toString(),
-      patientId: pid, name, birthDate: bday,
+      patientId: pid, name, birthDate: bday, profileNotes: '',
       createdAt: new Date().toLocaleDateString('ja-JP'),
       lastVisit: new Date().toLocaleDateString('ja-JP'),
       plan: DEFAULT_P_FLOW.map((l, i) => ({
         id: `${Date.now()}-${i}`, label: l, notes: '', files: [],
-        status: i === 0 ? PStepStatus.IN_PROGRESS : PStepStatus.PENDING
+        status: i === 0 ? PStepStatus.IN_PROGRESS : PStepStatus.PENDING,
+        updatedBy: user?.name
       }))
     };
     setPatients([newP, ...patients]);
@@ -517,8 +545,11 @@ export default function App() {
               <span className="font-bold text-xl text-slate-800 tracking-tight">P-Support</span>
             </Link>
             <div className="flex items-center gap-4 sm:gap-8">
-              <div className="hidden sm:flex items-center gap-3 text-xs font-bold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
-                <UserCircle size={16} className="text-blue-500" /> {user.name} 先生
+              <div className="hidden sm:flex items-center gap-3 text-xs font-bold text-slate-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-100">
+                <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px]">
+                   {user.name.charAt(0)}
+                </div>
+                {user.name}
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg hover:bg-black transition-all active:scale-95 flex items-center">
@@ -535,6 +566,7 @@ export default function App() {
             <Route path="/" element={<PatientList patients={patients} />} />
             <Route path="/patient/:id" element={<PatientDetail 
               patients={patients} 
+              currentUser={user}
               onUpdate={p => setPatients(patients.map(o => o.id === p.id ? p : o))}
               onDelete={id => setPatients(patients.filter(o => o.id !== id))}
             />} />
@@ -551,7 +583,7 @@ export default function App() {
               <div className="space-y-5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">カルテID *</label>
-                  <input id="new-id" type="text" placeholder="例: P2025-001" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" />
+                  <input id="new-id" type="text" placeholder="例: P25-001" className="w-full px-5 py-3.5 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all font-bold text-sm" />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">患者名 *</label>
@@ -570,7 +602,7 @@ export default function App() {
                     )}
                     className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-[0.98]"
                   >
-                    登録を完了
+                    登録を完了する
                   </button>
                 </div>
               </div>
