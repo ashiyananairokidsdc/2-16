@@ -1,6 +1,7 @@
-
 {
   "requestFramePermissions": [
     "camera"
-  ]
+  ],
+  "name": "P-Support: Dental Periodontal Care",
+  "description": ""
 }
