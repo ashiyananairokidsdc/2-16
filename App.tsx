@@ -4,7 +4,8 @@ import { HashRouter, Routes, Route, Link, useNavigate, useParams, Navigate } fro
 import { 
   Plus, ChevronRight, Calendar, Clipboard, Camera, Database, Search, 
   CheckCircle2, Clock, Trash2, FileText, AlertCircle, Settings, X, 
-  CloudUpload, Check, LogOut, User as UserIcon, Lock, TrendingUp
+  CloudUpload, Check, LogOut, User as UserIcon, Lock, TrendingUp,
+  Edit2, Save, ArrowUp, ArrowDown, GripVertical
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
 import { analyzeStepData } from './geminiService.ts';
@@ -178,10 +179,18 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   const [activeId, setActiveId] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  
+  // Modals and Edit States
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isPlanEditMode, setIsPlanEditMode] = useState(false);
+  const [editingPatient, setEditingPatient] = useState<Partial<PatientRecord>>({});
 
   useEffect(() => {
-    if (patient && !activeId) {
-      setActiveId(patient.plan.find(s => s.status === '実施中')?.id || patient.plan[0].id);
+    if (patient) {
+      if (!activeId) {
+        setActiveId(patient.plan.find(s => s.status === '実施中')?.id || patient.plan[0]?.id || null);
+      }
+      setEditingPatient(patient);
     }
   }, [patient]);
 
@@ -190,11 +199,53 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   const age = calculateAge(patient.birthDate);
   const activeStep = patient.plan.find(s => s.id === activeId) || patient.plan[0];
   const completedCount = patient.plan.filter(s => s.status === '完了').length;
-  const progressPercent = Math.round((completedCount / patient.plan.length) * 100);
+  const progressPercent = patient.plan.length > 0 ? Math.round((completedCount / patient.plan.length) * 100) : 0;
 
   const handleUpdateStep = (updates: Partial<TreatmentStep>) => {
     const newPlan = patient.plan.map(s => s.id === activeId ? { ...s, ...updates } : s);
     onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
+  };
+
+  const handleSaveProfile = () => {
+    onUpdate({ ...patient, ...editingPatient, lastVisit: new Date().toLocaleDateString('ja-JP') });
+    setIsProfileModalOpen(false);
+  };
+
+  const handleUpdatePlan = (newPlan: TreatmentStep[]) => {
+    onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
+  };
+
+  const addStep = () => {
+    const newStep: TreatmentStep = {
+      id: Date.now().toString(),
+      label: '新しいステップ',
+      status: PStepStatus.PENDING,
+      notes: '',
+      files: []
+    };
+    handleUpdatePlan([...patient.plan, newStep]);
+  };
+
+  const removeStep = (sid: string) => {
+    if (patient.plan.length <= 1) return;
+    if (confirm('このステップを削除しますか？記録されているメモや写真も消去されます。')) {
+      const newPlan = patient.plan.filter(s => s.id !== sid);
+      handleUpdatePlan(newPlan);
+      if (activeId === sid) setActiveId(newPlan[0].id);
+    }
+  };
+
+  const moveStep = (index: number, direction: 'up' | 'down') => {
+    const newPlan = [...patient.plan];
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= newPlan.length) return;
+    [newPlan[index], newPlan[targetIndex]] = [newPlan[targetIndex], newPlan[index]];
+    handleUpdatePlan(newPlan);
+  };
+
+  const renameStep = (sid: string, newLabel: string) => {
+    const newPlan = patient.plan.map(s => s.id === sid ? { ...s, label: newLabel } : s);
+    handleUpdatePlan(newPlan);
   };
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -236,13 +287,16 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
     <div className="max-w-6xl mx-auto space-y-6 pb-20">
       {/* Header Info */}
       <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
+        <div className="flex-1">
           <button onClick={() => navigate('/')} className="text-xs font-bold text-slate-400 hover:text-blue-600 mb-4 flex items-center transition-colors">
             <ChevronRight className="rotate-180 mr-1" size={14} /> ダッシュボードへ
           </button>
           <div className="flex items-center gap-4 mb-2">
             <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight">{patient.name}</h2>
             <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg">ID: {patient.patientId}</span>
+            <button onClick={() => setIsProfileModalOpen(true)} className="p-2 text-slate-300 hover:text-blue-500 hover:bg-blue-50 rounded-xl transition-all">
+              <Edit2 size={18} />
+            </button>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
             <span className="flex items-center font-medium"><Calendar size={16} className="mr-1.5 text-blue-500" /> {patient.birthDate ? `${patient.birthDate.replace(/-/g, '/')} (${age}歳)` : '生年月日未登録'}</span>
@@ -261,120 +315,230 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Progress Stepper */}
-        <div className="lg:col-span-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm h-fit">
-          <div className="mb-6">
-            <div className="flex justify-between items-end mb-2">
-              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">全体の進行度</h3>
-              <span className="text-blue-600 font-extrabold text-xl">{progressPercent}%</span>
-            </div>
-            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-               <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
-            </div>
+        {/* Left: Progress Stepper / Timeline */}
+        <div className="lg:col-span-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm h-fit sticky top-24">
+          <div className="flex justify-between items-center mb-6">
+            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">治療ロードマップ</h3>
+            <button 
+              onClick={() => setIsPlanEditMode(!isPlanEditMode)}
+              className={`text-[10px] font-bold px-3 py-1 rounded-lg transition-all ${isPlanEditMode ? 'bg-green-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            >
+              {isPlanEditMode ? '編集終了' : '計画を編集'}
+            </button>
           </div>
 
-          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
-            {patient.plan.map((s, i) => (
-              <button 
-                key={s.id} onClick={() => setActiveId(s.id)}
-                className={`w-full text-left p-4 rounded-2xl transition-all flex items-center gap-4 border ${activeId === s.id ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-white border-slate-50 hover:border-slate-200'}`}
-              >
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
-                  s.status === '完了' ? (activeId === s.id ? 'bg-white text-blue-600' : 'bg-green-100 text-green-600') : 
-                  s.status === '実施中' ? (activeId === s.id ? 'bg-white text-blue-600' : 'bg-blue-100 text-blue-600') : 
-                  'bg-slate-100 text-slate-300'
-                }`}>
-                  {s.status === '完了' ? <Check size={14} strokeWidth={3} /> : <span className="text-[10px] font-bold">{i + 1}</span>}
-                </div>
-                <div className="flex-1 overflow-hidden">
-                  <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-white' : 'text-slate-700'}`}>{s.label}</p>
-                  <p className={`text-[10px] font-bold mt-0.5 ${activeId === s.id ? 'text-blue-100' : 'text-slate-400'}`}>{s.status}</p>
-                </div>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Right: Step Detail */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-              <h3 className="text-xl font-bold text-slate-800">{activeStep.label}</h3>
-              <div className="flex items-center gap-3">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス:</span>
-                <select 
-                  value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
-                  className="text-xs font-bold border-none rounded-xl px-4 py-2 outline-none bg-white shadow-sm ring-1 ring-slate-100 focus:ring-blue-500 transition-all cursor-pointer"
-                >
-                  {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
-                </select>
-              </div>
-            </div>
+          <div className="relative space-y-0.5 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
+            {/* Timeline Line */}
+            <div className="absolute left-[27px] top-4 bottom-4 w-0.5 bg-slate-100 -z-0" />
             
-            <div className="p-8 space-y-8">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="space-y-3">
-                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
-                    <FileText size={12} className="mr-1.5" /> 処置内容・経過メモ
-                  </label>
-                  <textarea 
-                    className="w-full h-72 p-5 bg-slate-50 border border-transparent rounded-3xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm leading-relaxed"
-                    placeholder="こちらに処置内容や経過を記録してください..."
-                    value={activeStep.notes}
-                    onChange={e => handleUpdateStep({ notes: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
-                      <Camera size={12} className="mr-1.5" /> 写真・画像資料
-                    </label>
-                    <label className="cursor-pointer bg-blue-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-50 active:scale-95">
-                      写真を追加
-                      <input type="file" className="hidden" onChange={handleFile} />
-                    </label>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 max-h-[18rem] overflow-y-auto pr-2 custom-scrollbar">
-                    {activeStep.files.map(f => (
-                      <div key={f.id} className="relative group rounded-2xl overflow-hidden border border-slate-100 aspect-video shadow-sm">
-                        <img src={f.url} className="w-full h-full object-cover" alt="" />
-                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                          <button onClick={() => handleUpdateStep({ files: activeStep.files.filter(x => x.id !== f.id) })} className="bg-red-500 text-white p-2 rounded-xl transform hover:scale-110 transition-transform">
-                            <Trash2 size={16}/>
-                          </button>
+            {patient.plan.map((s, i) => (
+              <div key={s.id} className="relative group">
+                <div className="flex items-center gap-4 py-2">
+                  <button 
+                    onClick={() => !isPlanEditMode && setActiveId(s.id)}
+                    disabled={isPlanEditMode}
+                    className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center shrink-0 transition-all ${
+                      s.status === '完了' ? 'bg-green-500 text-white' : 
+                      s.status === '実施中' ? 'bg-blue-600 text-white ring-4 ring-blue-50 shadow-lg shadow-blue-100' : 
+                      'bg-white border-2 border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    {s.status === '完了' ? <Check size={14} strokeWidth={3} /> : <span className="text-[10px] font-bold">{i + 1}</span>}
+                  </button>
+                  
+                  <div className={`flex-1 p-3 rounded-2xl transition-all border ${
+                    activeId === s.id && !isPlanEditMode ? 'bg-blue-50/50 border-blue-200 ring-1 ring-blue-100' : 
+                    isPlanEditMode ? 'bg-slate-50 border-transparent' : 'bg-white border-transparent'
+                  }`}>
+                    {isPlanEditMode ? (
+                      <div className="flex items-center gap-2">
+                        <input 
+                          type="text" 
+                          value={s.label}
+                          onChange={(e) => renameStep(s.id, e.target.value)}
+                          className="flex-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold outline-none focus:ring-1 focus:ring-blue-500"
+                        />
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => moveStep(i, 'up')} disabled={i === 0} className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30"><ArrowUp size={14}/></button>
+                          <button onClick={() => moveStep(i, 'down')} disabled={i === patient.plan.length - 1} className="p-1 text-slate-400 hover:text-blue-500 disabled:opacity-30"><ArrowDown size={14}/></button>
+                          <button onClick={() => removeStep(s.id)} className="p-1 text-slate-400 hover:text-red-500"><Trash2 size={14}/></button>
                         </div>
                       </div>
-                    ))}
-                    {activeStep.files.length === 0 && (
-                      <div className="col-span-2 py-20 text-center bg-slate-50/50 border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300">
-                        <Camera size={32} className="mx-auto mb-2 opacity-20" />
-                        <p className="text-xs font-medium">画像が登録されていません</p>
+                    ) : (
+                      <div onClick={() => setActiveId(s.id)} className="cursor-pointer">
+                        <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
+                        <p className={`text-[9px] font-bold mt-0.5 tracking-wider ${
+                          s.status === '完了' ? 'text-green-500' : 
+                          s.status === '実施中' ? 'text-blue-500' : 'text-slate-400'
+                        }`}>{s.status}</p>
                       </div>
                     )}
                   </div>
                 </div>
               </div>
+            ))}
 
-              <div className="pt-8 border-t border-slate-50">
-                <button onClick={runAi} className="w-full bg-slate-900 text-white py-4 rounded-3xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-xl shadow-slate-100 active:scale-[0.98]">
-                  <AlertCircle size={20} className="mr-2 text-blue-400" /> AIアシスタントによる画像・経過分析
-                </button>
-                {aiResult && (
-                  <div className="mt-6 p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] text-sm text-indigo-900 whitespace-pre-wrap leading-relaxed animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="flex items-center gap-2 mb-4">
-                       <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
-                         <Database size={16} />
-                       </div>
-                       <p className="font-bold text-indigo-900">Gemini AI 分析レポート</p>
-                    </div>
-                    {aiResult}
+            {isPlanEditMode && (
+              <button 
+                onClick={addStep}
+                className="w-full mt-4 py-3 border-2 border-dashed border-slate-100 rounded-2xl text-slate-400 text-[10px] font-bold flex items-center justify-center hover:bg-slate-50 hover:border-slate-200 transition-all"
+              >
+                <Plus size={14} className="mr-1" /> 工程を追加する
+              </button>
+            )}
+          </div>
+          
+          <div className="mt-8 pt-6 border-t border-slate-50">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">現在の進捗</span>
+              <span className="text-blue-600 font-extrabold text-sm">{progressPercent}%</span>
+            </div>
+            <div className="h-1.5 w-full bg-slate-50 rounded-full overflow-hidden">
+               <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right: Step Detail */}
+        <div className="lg:col-span-8 space-y-6">
+          {!activeStep ? (
+            <div className="bg-white rounded-[2rem] p-20 text-center border border-slate-100">
+              <p className="text-slate-400 font-bold">治療ステップを選択または追加してください</p>
+            </div>
+          ) : (
+            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+              <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-white shadow-sm flex items-center justify-center text-blue-600 border border-slate-100">
+                    <Clipboard size={20} />
                   </div>
-                )}
+                  <h3 className="text-xl font-bold text-slate-800">{activeStep.label}</h3>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">状況更新:</span>
+                  <select 
+                    value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
+                    className="text-xs font-bold border-none rounded-xl px-4 py-2 outline-none bg-white shadow-sm ring-1 ring-slate-100 focus:ring-blue-500 transition-all cursor-pointer"
+                  >
+                    {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="p-8 space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                      <FileText size={12} className="mr-1.5" /> 処置内容・経過メモ
+                    </label>
+                    <textarea 
+                      className="w-full h-72 p-5 bg-slate-50 border border-transparent rounded-3xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm leading-relaxed"
+                      placeholder="こちらに処置内容や経過を記録してください..."
+                      value={activeStep.notes}
+                      onChange={e => handleUpdateStep({ notes: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                        <Camera size={12} className="mr-1.5" /> 写真・画像資料
+                      </label>
+                      <label className="cursor-pointer bg-blue-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-50 active:scale-95">
+                        写真を追加
+                        <input type="file" className="hidden" onChange={handleFile} />
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 max-h-[18rem] overflow-y-auto pr-2 custom-scrollbar">
+                      {activeStep.files.map(f => (
+                        <div key={f.id} className="relative group rounded-2xl overflow-hidden border border-slate-100 aspect-video shadow-sm">
+                          <img src={f.url} className="w-full h-full object-cover" alt="" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            <button onClick={() => handleUpdateStep({ files: activeStep.files.filter(x => x.id !== f.id) })} className="bg-red-500 text-white p-2 rounded-xl transform hover:scale-110 transition-transform">
+                              <Trash2 size={16}/>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {activeStep.files.length === 0 && (
+                        <div className="col-span-2 py-20 text-center bg-slate-50/50 border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300">
+                          <Camera size={32} className="mx-auto mb-2 opacity-20" />
+                          <p className="text-xs font-medium">画像が登録されていません</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-8 border-t border-slate-50">
+                  <button onClick={runAi} className="w-full bg-slate-900 text-white py-4 rounded-3xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-xl shadow-slate-100 active:scale-[0.98]">
+                    <AlertCircle size={20} className="mr-2 text-blue-400" /> AIアシスタントによる画像・経過分析
+                  </button>
+                  {aiResult && (
+                    <div className="mt-6 p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] text-sm text-indigo-900 whitespace-pre-wrap leading-relaxed animate-in fade-in slide-in-from-top-4 duration-500">
+                      <div className="flex items-center gap-2 mb-4">
+                         <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                           <Database size={16} />
+                         </div>
+                         <p className="font-bold text-indigo-900">Gemini AI 分析レポート</p>
+                      </div>
+                      {aiResult}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Profile Edit Modal */}
+      {isProfileModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <div className="bg-white p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl animate-in zoom-in duration-300">
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-2xl font-bold text-slate-800">プロフィールの編集</h3>
+              <button onClick={() => setIsProfileModalOpen(false)} className="text-slate-300 hover:text-slate-500 transition-colors"><X size={24}/></button>
+            </div>
+            <div className="space-y-5">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">カルテID</label>
+                <input 
+                  type="text" 
+                  value={editingPatient.patientId || ''} 
+                  onChange={e => setEditingPatient({...editingPatient, patientId: e.target.value})}
+                  className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" 
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">患者氏名</label>
+                <input 
+                  type="text" 
+                  value={editingPatient.name || ''} 
+                  onChange={e => setEditingPatient({...editingPatient, name: e.target.value})}
+                  className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" 
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">生年月日</label>
+                <input 
+                  type="date" 
+                  value={editingPatient.birthDate || ''} 
+                  onChange={e => setEditingPatient({...editingPatient, birthDate: e.target.value})}
+                  className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" 
+                />
+              </div>
+              <div className="pt-4">
+                <button 
+                  onClick={handleSaveProfile}
+                  className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                >
+                  <Save size={18} /> 保存する
+                </button>
               </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
