@@ -6,9 +6,9 @@ import {
   CheckCircle2, Clock, Trash2, FileText, AlertCircle, Settings, X, 
   CloudUpload, Check, LogOut, User as UserIcon, Lock
 } from 'lucide-react';
-import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types';
-import { analyzeStepData } from './services/geminiService';
-import { syncToGoogleSheet } from './services/sheetService';
+import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
+import { analyzeStepData } from './geminiService.ts';
+import { syncToGoogleSheet } from './sheetService.ts';
 
 // --- Auth Component ---
 
