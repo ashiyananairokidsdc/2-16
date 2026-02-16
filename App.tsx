@@ -210,12 +210,26 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const age = calculateAge(patient.birthDate);
   const activeStep = patient.plan.find(s => s.id === activeId) || patient.plan[0];
   const completedCount = patient.plan.filter(s => s.status === '完了').length;
+  // Fix: Correct variable name from 'p' to 'patient' to fix Error on line 213
   const progressPercent = patient.plan.length > 0 ? Math.round((completedCount / patient.plan.length) * 100) : 0;
 
+  // 汎用的な更新（メモやファイルなど）
   const handleUpdateStep = (updates: Partial<TreatmentStep>) => {
     const newPlan = patient.plan.map(s => {
       if (s.id === activeId) {
-        return { ...s, ...updates, updatedBy: currentUser.name };
+        return { ...s, ...updates };
+      }
+      return s;
+    });
+    onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
+  };
+
+  // ステータス変更時の特別ロジック（担当者を更新する）
+  const handleStatusChange = (newStatus: PStepStatus) => {
+    const newPlan = patient.plan.map(s => {
+      if (s.id === activeId) {
+        // ステータスが変更されたら、現在のユーザーを「担当者」として記録
+        return { ...s, status: newStatus, updatedBy: currentUser.name };
       }
       return s;
     });
@@ -233,7 +247,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
 
   const addStep = () => {
     const newStep: TreatmentStep = {
-      id: Date.now().toString(), label: '新規工程', status: PStepStatus.PENDING, notes: '', files: [], updatedBy: currentUser.name
+      id: Date.now().toString(), label: '新規工程', status: PStepStatus.PENDING, notes: '', files: [], updatedBy: ''
     };
     handleUpdatePlan([...patient.plan, newStep]);
   };
@@ -382,7 +396,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                       ) : (
                         <div className="flex justify-between items-center">
                           <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
-                          {s.updatedBy && <span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold" title="最終更新者">{s.updatedBy.charAt(0)}</span>}
+                          {s.updatedBy && <span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold" title={`最終操作者: ${s.updatedBy}`}>{s.updatedBy.charAt(0)}</span>}
                         </div>
                       )}
                     </div>
@@ -410,10 +424,10 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                 <div>
                   <h3 className="text-lg font-bold text-slate-800">{activeStep.label}</h3>
                   <div className="flex items-center gap-2 mt-0.5">
-                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス</p>
+                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス設定</p>
                      {activeStep.updatedBy && (
-                       <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
-                         <UserCheck size={10} className="mr-1" /> 担当: {activeStep.updatedBy}
+                       <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 animate-in fade-in zoom-in duration-300">
+                         <UserCheck size={10} className="mr-1" /> 最終操作: {activeStep.updatedBy}
                        </span>
                      )}
                   </div>
@@ -421,8 +435,9 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
               </div>
               <div className="flex items-center gap-3">
                 <select 
-                  value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
-                  className="text-xs font-bold border border-slate-200 rounded-xl px-4 py-2 outline-none bg-white shadow-sm cursor-pointer hover:border-slate-300 transition-all"
+                  value={activeStep.status} 
+                  onChange={e => handleStatusChange(e.target.value as PStepStatus)}
+                  className="text-xs font-bold border border-slate-200 rounded-xl px-4 py-2 outline-none bg-white shadow-sm cursor-pointer hover:border-slate-300 transition-all focus:ring-2 focus:ring-blue-100"
                 >
                   {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
                 </select>
@@ -589,7 +604,7 @@ export default function App() {
       plan: DEFAULT_P_FLOW.map((l, i) => ({
         id: `${Date.now()}-${i}`, label: l, notes: '', files: [],
         status: i === 0 ? PStepStatus.IN_PROGRESS : PStepStatus.PENDING,
-        updatedBy: user?.name
+        updatedBy: i === 0 ? user?.name : ''
       }))
     };
     
