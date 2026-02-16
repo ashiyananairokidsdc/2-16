@@ -7,16 +7,15 @@ export enum PStepStatus {
 
 export interface User {
   name: string;
-  passwordHash: string; // 簡易的なパスワード管理
+  password: string;
 }
 
 export interface PatientFile {
   id: string;
-  url: string;
+  url: string; // Base64 string
   name: string;
-  type: 'image' | 'pdf' | 'other';
+  type: 'image' | 'other';
   date: string;
-  aiAnalysis?: string;
 }
 
 export interface TreatmentStep {
@@ -25,12 +24,11 @@ export interface TreatmentStep {
   status: PStepStatus;
   notes: string;
   files: PatientFile[];
-  completedDate?: string;
 }
 
 export interface PatientRecord {
   id: string;
-  patientId: string; // 医院での管理ID
+  patientId: string;
   name: string;
   birthDate: string;
   plan: TreatmentStep[];
