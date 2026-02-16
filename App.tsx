@@ -3,9 +3,9 @@ import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, Link, useNavigate, useParams, Navigate } from 'react-router-dom';
 import { 
   Plus, ChevronRight, Calendar, Clipboard, Camera, Database, Search, 
-  CheckCircle2, Clock, Trash2, FileText, AlertCircle, X, 
-  CloudUpload, Check, LogOut, User as UserIcon, Edit3, Save, 
-  ArrowUp, ArrowDown, Layout, UserCircle, Settings2, Info, UserCheck
+  Clock, Trash2, FileText, AlertCircle, X, 
+  CloudUpload, Check, LogOut, Edit3, Save, 
+  ArrowUp, ArrowDown, Layout, Settings2, Info, UserCheck
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
 import { analyzeStepData } from './geminiService.ts';
@@ -169,7 +169,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
       }
       setEditingPatient(patient);
     }
-  }, [patient]);
+  }, [patient, activeId]);
 
   if (!patient) return <Navigate to="/" />;
 
@@ -237,14 +237,20 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
   const runAi = async () => {
     setIsAnalyzing(true);
     setAiResult(null);
-    const res = await analyzeStepData(patient, activeStep);
-    setAiResult(res);
-    setIsAnalyzing(false);
+    try {
+      const res = await analyzeStepData(patient, activeStep);
+      setAiResult(res);
+    } catch (e: any) {
+      console.error(e);
+      setAiResult("解析中に予期せぬエラーが発生しました。");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-20 animate-in fade-in duration-700">
-      {/* Refined Header */}
+      {/* Header */}
       <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
           <div className="flex-1">
@@ -279,7 +285,6 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
           </div>
         </div>
 
-        {/* Profile Note Area */}
         <div className="pt-6 border-t border-slate-100">
            <div className="flex items-center gap-2 mb-2 text-slate-400">
               <Info size={14} />
@@ -295,7 +300,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left: Roadmap Sidebar */}
+        {/* Left Sidebar */}
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm sticky top-24">
             <div className="flex justify-between items-center mb-6">
@@ -360,7 +365,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
           </div>
         </div>
 
-        {/* Right: Focused Detail Area */}
+        {/* Right Detail View */}
         <div className="lg:col-span-8">
           <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden min-h-[600px] flex flex-col">
             <div className="p-6 sm:p-8 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -398,7 +403,7 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
                   </label>
                   <textarea 
                     className="w-full h-[300px] p-5 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-50 outline-none transition-all text-sm leading-relaxed"
-                    placeholder="治療の内容、患者の反応などを記録..."
+                    placeholder="治療の内容、患者の反応、使用器具などを記録..."
                     value={activeStep.notes}
                     onChange={e => handleUpdateStep({ notes: e.target.value })}
                   />
@@ -440,14 +445,14 @@ const PatientDetail = ({ patients, onUpdate, onDelete, currentUser }: { patients
                   className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-md active:scale-[0.99] disabled:opacity-50"
                 >
                   {isAnalyzing ? (
-                    <div className="flex items-center"><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" /> 分析中...</div>
-                  ) : <><AlertCircle size={18} className="mr-2 text-blue-400" /> AI診断アシスタント</>}
+                    <div className="flex items-center"><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" /> 解析中...</div>
+                  ) : <><AlertCircle size={18} className="mr-2 text-blue-400" /> AI診断アシスタントを起動</>}
                 </button>
                 {aiResult && (
                   <div className="mt-6 p-6 bg-indigo-50/30 border border-indigo-100 rounded-2xl text-sm text-slate-700 whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative">
                     <div className="flex items-center gap-2 mb-3">
                        <Database size={14} className="text-indigo-600" />
-                       <p className="font-bold text-indigo-900 text-[10px] uppercase tracking-widest">AI Report</p>
+                       <p className="font-bold text-indigo-900 text-[10px] uppercase tracking-widest">AI分析レポート</p>
                     </div>
                     <div className="text-slate-700 text-sm">
                       {aiResult}
