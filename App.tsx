@@ -210,7 +210,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const age = calculateAge(patient.birthDate);
   const activeStep = patient.plan.find(s => s.id === activeId) || patient.plan[0];
   const completedCount = patient.plan.filter(s => s.status === '完了').length;
-  // Fix: Correct variable name from 'p' to 'patient' to fix Error on line 213
   const progressPercent = patient.plan.length > 0 ? Math.round((completedCount / patient.plan.length) * 100) : 0;
 
   // 汎用的な更新（メモやファイルなど）
@@ -394,9 +393,13 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                           <button onClick={(e) => { e.stopPropagation(); if(confirm('この工程を削除しますか？')) handleUpdatePlan(patient.plan.filter(p => p.id !== s.id)); }} className="text-slate-200 hover:text-red-500"><Trash2 size={14}/></button>
                         </div>
                       ) : (
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center gap-2">
                           <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
-                          {s.updatedBy && <span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold" title={`最終操作者: ${s.updatedBy}`}>{s.updatedBy.charAt(0)}</span>}
+                          {s.updatedBy && s.status !== PStepStatus.PENDING && (
+                            <span className="text-[9px] text-slate-400 font-medium shrink-0 animate-in fade-in duration-500">
+                              {s.updatedBy}
+                            </span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -427,7 +430,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス設定</p>
                      {activeStep.updatedBy && (
                        <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 animate-in fade-in zoom-in duration-300">
-                         <UserCheck size={10} className="mr-1" /> 最終操作: {activeStep.updatedBy}
+                         <UserCheck size={10} className="mr-1" /> 担当者: {activeStep.updatedBy}
                        </span>
                      )}
                   </div>
@@ -636,7 +639,7 @@ export default function App() {
                 <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px]">
                    {user.name.charAt(0)}
                 </div>
-                {user.name} 先生
+                {user.name}
               </div>
               <div className="flex items-center gap-2">
                 <button onClick={() => setIsModalOpen(true)} className="bg-slate-900 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-lg hover:bg-black transition-all active:scale-95 flex items-center">
