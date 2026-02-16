@@ -4,11 +4,25 @@ import { HashRouter, Routes, Route, Link, useNavigate, useParams, Navigate } fro
 import { 
   Plus, ChevronRight, Calendar, Clipboard, Camera, Database, Search, 
   CheckCircle2, Clock, Trash2, FileText, AlertCircle, Settings, X, 
-  CloudUpload, Check, LogOut, User as UserIcon, Lock
+  CloudUpload, Check, LogOut, User as UserIcon, Lock, TrendingUp
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
 import { analyzeStepData } from './geminiService.ts';
 import { syncToGoogleSheet } from './sheetService.ts';
+
+// --- Utility Functions ---
+
+const calculateAge = (birthDateStr: string): number | null => {
+  if (!birthDateStr) return null;
+  const birthDate = new Date(birthDateStr);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age;
+};
 
 // --- Auth Component ---
 
@@ -21,9 +35,7 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !password) return;
-
     const users: User[] = JSON.parse(localStorage.getItem('p-support-users') || '[]');
-
     if (isSignup) {
       if (users.find(u => u.name === name)) {
         setError('この名前は登録済みです');
@@ -43,29 +55,29 @@ const LoginPage = ({ onLogin }: { onLogin: (user: User) => void }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 p-4">
       <div className="bg-white p-8 rounded-3xl shadow-xl w-full max-w-sm border border-slate-100">
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-blue-600 p-4 rounded-2xl mb-4 text-white">
+          <div className="bg-blue-600 p-4 rounded-2xl mb-4 text-white shadow-lg shadow-blue-200">
             <Database size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-800">P-Support</h1>
+          <h1 className="text-2xl font-bold text-slate-800 tracking-tight">P-Support</h1>
           <p className="text-slate-400 text-sm">歯科周病治療管理システム</p>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <input 
             type="text" placeholder="お名前" required
-            className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             value={name} onChange={e => setName(e.target.value)}
           />
           <input 
             type="password" placeholder="パスワード" required
-            className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+            className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500 transition-all"
             value={password} onChange={e => setPassword(e.target.value)}
           />
           {error && <p className="text-red-500 text-xs text-center font-bold">{error}</p>}
-          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition">
+          <button className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100">
             {isSignup ? 'アカウント作成' : 'ログイン'}
           </button>
         </form>
-        <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-4 text-sm text-slate-400 hover:text-blue-600">
+        <button onClick={() => setIsSignup(!isSignup)} className="w-full mt-4 text-sm text-slate-400 hover:text-blue-600 transition">
           {isSignup ? 'ログイン画面へ' : '新規登録はこちら'}
         </button>
       </div>
@@ -80,35 +92,79 @@ const PatientList = ({ patients }: { patients: PatientRecord[] }) => {
   const filtered = patients.filter(p => p.name.includes(search) || p.patientId.includes(search));
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <h1 className="text-2xl font-bold text-slate-800">患者一覧</h1>
-        <div className="relative w-full md:w-64">
+        <div>
+          <h1 className="text-3xl font-bold text-slate-800 tracking-tight">患者管理</h1>
+          <p className="text-slate-500 text-sm mt-1">総登録数: {patients.length}名</p>
+        </div>
+        <div className="relative w-full md:w-80">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input 
-            type="text" placeholder="名前・ID検索"
-            className="w-full pl-10 pr-4 py-2 border rounded-xl outline-none focus:ring-2 focus:ring-blue-500"
+            type="text" placeholder="名前・カルテIDで検索"
+            className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-sm transition-all"
             value={search} onChange={e => setSearch(e.target.value)}
           />
         </div>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map(p => (
-          <Link key={p.id} to={`/patient/${p.id}`} className="bg-white p-6 rounded-2xl border border-slate-100 hover:shadow-lg transition group">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full uppercase">ID: {p.patientId}</span>
-                <h3 className="text-xl font-bold text-slate-800 mt-2">{p.name}</h3>
-              </div>
-              <ChevronRight className="text-slate-300 group-hover:text-blue-500 transition-colors" />
-            </div>
-            <div className="text-sm text-slate-500 space-y-1">
-              <p className="flex items-center"><Clock size={14} className="mr-2"/>最終来院: {p.lastVisit}</p>
-              <p className="flex items-center"><CheckCircle2 size={14} className="mr-2"/>完了工程: {p.plan.filter(s => s.status === '完了').length} / {p.plan.length}</p>
-            </div>
-          </Link>
-        ))}
-      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-white rounded-3xl p-20 text-center border border-dashed border-slate-200">
+          <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
+            <Search className="text-slate-300" size={32} />
+          </div>
+          <p className="text-slate-400 font-medium">該当する患者が見つかりません</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filtered.map(p => {
+            const age = calculateAge(p.birthDate);
+            const completedCount = p.plan.filter(s => s.status === '完了').length;
+            const progressPercent = Math.round((completedCount / p.plan.length) * 100);
+            const currentStep = p.plan.find(s => s.status === '実施中')?.label || '完了';
+
+            return (
+              <Link key={p.id} to={`/patient/${p.id}`} className="bg-white rounded-3xl border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all group overflow-hidden">
+                <div className="p-6">
+                  <div className="flex justify-between items-start mb-4">
+                    <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full tracking-wider">ID: {p.patientId}</span>
+                    <div className="flex items-center text-slate-300 group-hover:text-blue-500 transition-colors">
+                      <span className="text-xs font-bold mr-1">{progressPercent}%</span>
+                      <ChevronRight size={18} />
+                    </div>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-800 mb-1">{p.name}</h3>
+                  <p className="text-sm text-slate-500 mb-6">
+                    {p.birthDate ? `${p.birthDate.replace(/-/g, '/')} (${age}歳)` : '生年月日未登録'}
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <div className="flex items-center text-xs font-bold text-slate-400 uppercase tracking-widest">
+                      <TrendingUp size={12} className="mr-1.5" /> 現在のフェーズ
+                    </div>
+                    <p className="text-sm font-bold text-slate-700 truncate">{currentStep}</p>
+                    
+                    <div className="relative h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                      <div 
+                        className="absolute h-full bg-blue-600 transition-all duration-700 ease-out"
+                        style={{ width: `${progressPercent}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-slate-50 px-6 py-3 border-t border-slate-100 flex justify-between items-center">
+                   <div className="flex items-center text-[10px] font-bold text-slate-400">
+                     <Clock size={12} className="mr-1" /> {p.lastVisit}
+                   </div>
+                   <div className={`text-[10px] font-bold px-2 py-0.5 rounded ${progressPercent === 100 ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}`}>
+                     {progressPercent === 100 ? '治療完了' : '継続中'}
+                   </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 };
@@ -131,7 +187,10 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
 
   if (!patient) return <Navigate to="/" />;
 
+  const age = calculateAge(patient.birthDate);
   const activeStep = patient.plan.find(s => s.id === activeId) || patient.plan[0];
+  const completedCount = patient.plan.filter(s => s.status === '完了').length;
+  const progressPercent = Math.round((completedCount / patient.plan.length) * 100);
 
   const handleUpdateStep = (updates: Partial<TreatmentStep>) => {
     const newPlan = patient.plan.map(s => s.id === activeId ? { ...s, ...updates } : s);
@@ -141,18 +200,17 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
     reader.onload = () => {
       const img = new Image();
       img.onload = () => {
         const canvas = document.createElement('canvas');
-        const MAX = 600; // 超軽量化
+        const MAX = 800;
         let w = img.width, h = img.height;
         if (w > MAX) { h *= MAX / w; w = MAX; }
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d')?.drawImage(img, 0, 0, w, h);
-        const url = canvas.toDataURL('image/jpeg', 0.6);
+        const url = canvas.toDataURL('image/jpeg', 0.7);
         const newFile: PatientFile = { id: Date.now().toString(), url, name: file.name, type: 'image', date: new Date().toLocaleDateString() };
         handleUpdateStep({ files: [...activeStep.files, newFile] });
       };
@@ -175,89 +233,140 @@ const PatientDetail = ({ patients, onUpdate, onDelete }: { patients: PatientReco
   };
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-6 rounded-3xl border border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+    <div className="max-w-6xl mx-auto space-y-6 pb-20">
+      {/* Header Info */}
+      <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <button onClick={() => navigate('/')} className="text-xs text-slate-400 hover:text-blue-600 mb-2 flex items-center">
-            <ChevronRight className="rotate-180 mr-1" size={14} /> 一覧に戻る
+          <button onClick={() => navigate('/')} className="text-xs font-bold text-slate-400 hover:text-blue-600 mb-4 flex items-center transition-colors">
+            <ChevronRight className="rotate-180 mr-1" size={14} /> ダッシュボードへ
           </button>
-          <h2 className="text-3xl font-bold text-slate-800">{patient.name} <span className="text-sm font-normal text-slate-400 ml-2">ID: {patient.patientId}</span></h2>
+          <div className="flex items-center gap-4 mb-2">
+            <h2 className="text-3xl font-extrabold text-slate-800 tracking-tight">{patient.name}</h2>
+            <span className="bg-blue-600 text-white text-[10px] font-bold px-2 py-1 rounded-lg">ID: {patient.patientId}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-4 text-sm text-slate-500">
+            <span className="flex items-center font-medium"><Calendar size={16} className="mr-1.5 text-blue-500" /> {patient.birthDate ? `${patient.birthDate.replace(/-/g, '/')} (${age}歳)` : '生年月日未登録'}</span>
+            <span className="text-slate-200">|</span>
+            <span className="flex items-center font-medium"><Clock size={16} className="mr-1.5 text-slate-400" /> 最終来院: {patient.lastVisit}</span>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <button onClick={sync} disabled={isSyncing} className="bg-blue-50 text-blue-600 px-4 py-2 rounded-xl text-sm font-bold flex items-center hover:bg-blue-100 transition">
-            <CloudUpload size={16} className="mr-2" /> 同期
+        <div className="flex items-center gap-3">
+          <button onClick={sync} disabled={isSyncing} className="bg-slate-50 text-slate-700 px-5 py-2.5 rounded-2xl text-sm font-bold flex items-center hover:bg-slate-100 transition shadow-sm">
+            <CloudUpload size={18} className="mr-2 text-blue-600" /> 同期
           </button>
-          <button onClick={() => {if(confirm('削除しますか？')) { onDelete(patient.id); navigate('/'); }}} className="p-2 text-red-300 hover:text-red-500">
-            <Trash2 size={20} />
+          <button onClick={() => {if(confirm('患者データを削除しますか？')) { onDelete(patient.id); navigate('/'); }}} className="p-3 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-2xl transition">
+            <Trash2 size={22} />
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar Stepper */}
-        <div className="lg:col-span-1 bg-white p-4 rounded-3xl border border-slate-100 h-fit">
-          <p className="text-[10px] font-bold text-slate-400 mb-4 uppercase tracking-widest text-center">Treatment Phase</p>
-          <div className="space-y-1">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left: Progress Stepper */}
+        <div className="lg:col-span-4 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm h-fit">
+          <div className="mb-6">
+            <div className="flex justify-between items-end mb-2">
+              <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest">全体の進行度</h3>
+              <span className="text-blue-600 font-extrabold text-xl">{progressPercent}%</span>
+            </div>
+            <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+               <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: `${progressPercent}%` }} />
+            </div>
+          </div>
+
+          <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-2 custom-scrollbar">
             {patient.plan.map((s, i) => (
               <button 
                 key={s.id} onClick={() => setActiveId(s.id)}
-                className={`w-full text-left p-3 rounded-2xl transition-all flex items-center gap-3 ${activeId === s.id ? 'bg-blue-600 text-white shadow-lg shadow-blue-100' : 'hover:bg-slate-50'}`}
+                className={`w-full text-left p-4 rounded-2xl transition-all flex items-center gap-4 border ${activeId === s.id ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100' : 'bg-white border-slate-50 hover:border-slate-200'}`}
               >
-                <div className={`w-2 h-2 rounded-full ${s.status === '完了' ? 'bg-green-400' : s.status === '実施中' ? 'bg-blue-400' : 'bg-slate-200'}`} />
-                <span className={`text-xs font-bold truncate ${activeId === s.id ? 'text-white' : 'text-slate-600'}`}>{s.label}</span>
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center shrink-0 ${
+                  s.status === '完了' ? (activeId === s.id ? 'bg-white text-blue-600' : 'bg-green-100 text-green-600') : 
+                  s.status === '実施中' ? (activeId === s.id ? 'bg-white text-blue-600' : 'bg-blue-100 text-blue-600') : 
+                  'bg-slate-100 text-slate-300'
+                }`}>
+                  {s.status === '完了' ? <Check size={14} strokeWidth={3} /> : <span className="text-[10px] font-bold">{i + 1}</span>}
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-white' : 'text-slate-700'}`}>{s.label}</p>
+                  <p className={`text-[10px] font-bold mt-0.5 ${activeId === s.id ? 'text-blue-100' : 'text-slate-400'}`}>{s.status}</p>
+                </div>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="lg:col-span-3 space-y-6">
-          <div className="bg-white rounded-3xl border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-50 flex justify-between items-center">
+        {/* Right: Step Detail */}
+        <div className="lg:col-span-8 space-y-6">
+          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
+            <div className="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
               <h3 className="text-xl font-bold text-slate-800">{activeStep.label}</h3>
-              <select 
-                value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
-                className="text-xs font-bold border rounded-full px-4 py-1.5 outline-none bg-slate-50"
-              >
-                {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
-              </select>
+              <div className="flex items-center gap-3">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス:</span>
+                <select 
+                  value={activeStep.status} onChange={e => handleUpdateStep({ status: e.target.value as any })}
+                  className="text-xs font-bold border-none rounded-xl px-4 py-2 outline-none bg-white shadow-sm ring-1 ring-slate-100 focus:ring-blue-500 transition-all cursor-pointer"
+                >
+                  {Object.values(PStepStatus).map(v => <option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
             </div>
             
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Clinical Notes</label>
+            <div className="p-8 space-y-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                <div className="space-y-3">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                    <FileText size={12} className="mr-1.5" /> 処置内容・経過メモ
+                  </label>
                   <textarea 
-                    className="w-full h-64 p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white outline-none transition-all text-sm"
-                    placeholder="処置内容を入力してください..."
+                    className="w-full h-72 p-5 bg-slate-50 border border-transparent rounded-3xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all text-sm leading-relaxed"
+                    placeholder="こちらに処置内容や経過を記録してください..."
                     value={activeStep.notes}
                     onChange={e => handleUpdateStep({ notes: e.target.value })}
                   />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <div className="flex justify-between items-center">
-                    <label className="text-xs font-bold text-slate-400 uppercase tracking-widest">Clinical Photos</label>
-                    <label className="cursor-pointer bg-blue-600 text-white px-3 py-1 rounded-lg text-xs font-bold">追加<input type="file" className="hidden" onChange={handleFile} /></label>
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest flex items-center">
+                      <Camera size={12} className="mr-1.5" /> 写真・画像資料
+                    </label>
+                    <label className="cursor-pointer bg-blue-600 text-white px-4 py-1.5 rounded-xl text-[10px] font-bold hover:bg-blue-700 transition-all shadow-md shadow-blue-50 active:scale-95">
+                      写真を追加
+                      <input type="file" className="hidden" onChange={handleFile} />
+                    </label>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="grid grid-cols-2 gap-3 max-h-[18rem] overflow-y-auto pr-2 custom-scrollbar">
                     {activeStep.files.map(f => (
-                      <div key={f.id} className="relative group rounded-xl overflow-hidden border border-slate-100">
-                        <img src={f.url} className="w-full h-24 object-cover" alt="" />
-                        <button onClick={() => handleUpdateStep({ files: activeStep.files.filter(x => x.id !== f.id) })} className="absolute top-1 right-1 bg-red-500 text-white p-1 rounded-lg opacity-0 group-hover:opacity-100 transition"><Trash2 size={12}/></button>
+                      <div key={f.id} className="relative group rounded-2xl overflow-hidden border border-slate-100 aspect-video shadow-sm">
+                        <img src={f.url} className="w-full h-full object-cover" alt="" />
+                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <button onClick={() => handleUpdateStep({ files: activeStep.files.filter(x => x.id !== f.id) })} className="bg-red-500 text-white p-2 rounded-xl transform hover:scale-110 transition-transform">
+                            <Trash2 size={16}/>
+                          </button>
+                        </div>
                       </div>
                     ))}
-                    {activeStep.files.length === 0 && <div className="col-span-2 py-10 text-center border-2 border-dashed border-slate-50 rounded-2xl text-slate-300 text-xs">画像なし</div>}
+                    {activeStep.files.length === 0 && (
+                      <div className="col-span-2 py-20 text-center bg-slate-50/50 border-2 border-dashed border-slate-100 rounded-[2rem] text-slate-300">
+                        <Camera size={32} className="mx-auto mb-2 opacity-20" />
+                        <p className="text-xs font-medium">画像が登録されていません</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div className="pt-6 border-t border-slate-50">
-                <button onClick={runAi} className="w-full bg-slate-800 text-white py-3 rounded-2xl font-bold flex items-center justify-center hover:bg-slate-900 transition shadow-lg shadow-slate-100">
-                  <AlertCircle size={18} className="mr-2" /> AIアシスタントに診断・分析を依頼
+              <div className="pt-8 border-t border-slate-50">
+                <button onClick={runAi} className="w-full bg-slate-900 text-white py-4 rounded-3xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-xl shadow-slate-100 active:scale-[0.98]">
+                  <AlertCircle size={20} className="mr-2 text-blue-400" /> AIアシスタントによる画像・経過分析
                 </button>
                 {aiResult && (
-                  <div className="mt-4 p-5 bg-indigo-50 border border-indigo-100 rounded-2xl text-sm text-indigo-900 whitespace-pre-wrap leading-relaxed animate-in fade-in duration-300">
-                    <p className="font-bold mb-2 flex items-center"><Database size={14} className="mr-2" /> Gemini AI Analysis</p>
+                  <div className="mt-6 p-6 bg-indigo-50/50 border border-indigo-100 rounded-[2rem] text-sm text-indigo-900 whitespace-pre-wrap leading-relaxed animate-in fade-in slide-in-from-top-4 duration-500">
+                    <div className="flex items-center gap-2 mb-4">
+                       <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                         <Database size={16} />
+                       </div>
+                       <p className="font-bold text-indigo-900">Gemini AI 分析レポート</p>
+                    </div>
                     {aiResult}
                   </div>
                 )}
@@ -287,10 +396,13 @@ export default function App() {
     localStorage.setItem('p-patients', JSON.stringify(patients));
   }, [patients]);
 
-  const addPatient = (name: string, pid: string) => {
+  const addPatient = (name: string, pid: string, bday: string) => {
+    if (!name || !pid) return;
     const newP: PatientRecord = {
       id: Date.now().toString(),
-      patientId: pid, name, birthDate: '',
+      patientId: pid, 
+      name, 
+      birthDate: bday,
       createdAt: new Date().toLocaleDateString('ja-JP'),
       lastVisit: new Date().toLocaleDateString('ja-JP'),
       plan: DEFAULT_P_FLOW.map((l, i) => ({
@@ -307,19 +419,26 @@ export default function App() {
   return (
     <HashRouter>
       <div className="min-h-screen bg-slate-50 flex flex-col font-sans">
-        <nav className="bg-white border-b border-slate-100 sticky top-0 z-50 px-4 py-3">
+        <nav className="bg-white/80 backdrop-blur-md border-b border-slate-100 sticky top-0 z-50 px-6 py-4">
           <div className="max-w-7xl mx-auto flex justify-between items-center">
-            <Link to="/" className="flex items-center gap-2 text-blue-600">
-              <Database size={24} /> <span className="font-bold text-xl text-slate-800 tracking-tight">P-Support</span>
+            <Link to="/" className="flex items-center gap-2 text-blue-600 group">
+              <div className="bg-blue-600 text-white p-1.5 rounded-lg group-hover:rotate-12 transition-transform">
+                <Database size={20} /> 
+              </div>
+              <span className="font-extrabold text-xl text-slate-800 tracking-tight">P-Support</span>
             </Link>
-            <div className="flex items-center gap-4">
-              <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition flex items-center"><Plus size={16} className="mr-1"/>登録</button>
-              <button onClick={() => { setUser(null); sessionStorage.clear(); }} className="p-2 text-slate-300 hover:text-red-500 transition"><LogOut size={20}/></button>
+            <div className="flex items-center gap-6">
+              <div className="hidden md:flex flex-col items-end">
+                <span className="text-xs font-bold text-slate-800">{user.name} 先生</span>
+                <span className="text-[10px] text-slate-400">オンライン</span>
+              </div>
+              <button onClick={() => setIsModalOpen(true)} className="bg-blue-600 text-white px-6 py-2 rounded-2xl text-sm font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all flex items-center active:scale-95"><Plus size={18} className="mr-1.5"/>患者登録</button>
+              <button onClick={() => { setUser(null); sessionStorage.clear(); }} className="text-slate-300 hover:text-red-500 transition-colors"><LogOut size={22}/></button>
             </div>
           </div>
         </nav>
         
-        <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8">
+        <main className="flex-1 max-w-7xl mx-auto w-full p-6 md:p-10">
           <Routes>
             <Route path="/" element={<PatientList patients={patients} />} />
             <Route path="/patient/:id" element={<PatientDetail 
@@ -331,19 +450,37 @@ export default function App() {
         </main>
 
         {isModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-            <div className="bg-white p-8 rounded-3xl w-full max-w-sm shadow-2xl animate-in zoom-in duration-200">
-              <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold">患者新規登録</h3>
-                <button onClick={() => setIsModalOpen(false)}><X/></button>
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <div className="bg-white p-10 rounded-[2.5rem] w-full max-w-md shadow-2xl animate-in zoom-in duration-300">
+              <div className="flex justify-between items-center mb-8">
+                <h3 className="text-2xl font-bold text-slate-800">新規患者の登録</h3>
+                <button onClick={() => setIsModalOpen(false)} className="text-slate-300 hover:text-slate-500 transition-colors"><X size={24}/></button>
               </div>
-              <div className="space-y-4">
-                <input id="new-name" type="text" placeholder="氏名" className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none" />
-                <input id="new-id" type="text" placeholder="カルテID" className="w-full px-4 py-3 bg-slate-50 border rounded-xl outline-none" />
-                <button 
-                  onClick={() => addPatient((document.getElementById('new-name') as HTMLInputElement).value, (document.getElementById('new-id') as HTMLInputElement).value)}
-                  className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700"
-                >登録する</button>
+              <div className="space-y-5">
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">カルテID *</label>
+                  <input id="new-id" type="text" placeholder="例: P2024001" className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">患者氏名 *</label>
+                  <input id="new-name" type="text" placeholder="例: 山田 太郎" className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" />
+                </div>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-2">生年月日</label>
+                  <input id="new-bday" type="date" className="w-full px-5 py-3.5 bg-slate-50 border border-transparent rounded-2xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition-all" />
+                </div>
+                <div className="pt-4">
+                  <button 
+                    onClick={() => addPatient(
+                      (document.getElementById('new-name') as HTMLInputElement).value, 
+                      (document.getElementById('new-id') as HTMLInputElement).value,
+                      (document.getElementById('new-bday') as HTMLInputElement).value
+                    )}
+                    className="w-full bg-blue-600 text-white py-4 rounded-2xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all active:scale-[0.98]"
+                  >
+                    登録を完了する
+                  </button>
+                </div>
               </div>
             </div>
           </div>
