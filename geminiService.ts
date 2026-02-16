@@ -3,16 +3,27 @@ import { GoogleGenAI } from "@google/genai";
 import { TreatmentStep, PatientRecord } from "./types.ts";
 
 export const analyzeStepData = async (patient: PatientRecord, step: TreatmentStep) => {
-  // process.env.API_KEY は実行環境の「Secrets」設定から自動的に読み込まれます
+  // 1. 環境変数(Secrets)からキーを取得
   const apiKey = process.env.API_KEY;
   
-  if (!apiKey || apiKey.includes("YOUR_API_KEY")) {
-    return "【設定エラー】APIキーが見つかりません。画面右側の「Secrets」タブで、Nameに 'API_KEY'、Valueに提供されたキーを入力して保存してください。";
+  // 2. キーの取得状況をチェック
+  if (!apiKey || apiKey === "undefined" || apiKey === "") {
+    return "【エラー：キーが届いていません】\n" +
+           "開発環境のSecrets設定が、まだプログラムに反映されていません。\n" +
+           "・Name: API_KEY が正しいか再確認してください。\n" +
+           "・設定後、一度ブラウザのタブを閉じて開き直すか、エディタをリスタートしてください。";
   }
 
-  const ai = new GoogleGenAI({ apiKey });
-  
+  // 3. キーの形式チェック
+  if (!apiKey.startsWith("AIza")) {
+    return "【エラー：キーの形式が不正です】\n" +
+           "取得したキーが 'AIza' で始まっていないようです。コピーミスがないか確認してください。";
+  }
+
   try {
+    // APIを呼び出す直前にインスタンスを作成（最新のキーを確実に使用するため）
+    const ai = new GoogleGenAI({ apiKey });
+    
     const images = step.files.filter(f => f.type === 'image').slice(0, 3);
     const parts: any[] = [];
     
@@ -28,31 +39,54 @@ export const analyzeStepData = async (patient: PatientRecord, step: TreatmentSte
     }
 
     parts.push({
-      text: `歯科臨床アドバイザーとして、以下の情報を分析し、専門的なアドバイスを日本語の箇条書きで提供してください。
+      text: `あなたは歯科専門のAI臨床アドバイザーです。
+以下の情報を歯科医学的な視点で分析し、日本語で具体的なアドバイスを行ってください。
 
-患者名: ${patient.name}
-現在の工程: ${step.label}
-処置メモ: ${step.notes || "（なし）"}
-特記事項: ${patient.profileNotes || "（なし）"}
+【患者】${patient.name}
+【工程】${step.label}
+【メモ】${step.notes || "未入力"}
+【特記】${patient.profileNotes || "特になし"}
 
-分析項目:
-1. 現在の口腔状態の評価と、処置の適切性。
-2. 画像（ある場合）から推測される炎症や清掃状態。
-3. 次のステップ（再評価やSRP等）へ進むための具体的な基準。
-4. 患者への説明で使える、モチベーション向上のためのフレーズ。`
+分析：
+1. 現状の整理
+2. 臨床的リスク
+3. 次回へのガイドライン
+4. 患者説明用フレーズ`
     });
 
+    // 最新モデルでリクエスト
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: [{ parts }],
     });
 
-    return response.text || "解析結果が空でした。再度お試しください。";
-  } catch (error: any) {
-    console.error("Gemini Error:", error);
-    if (error.message?.includes("API key")) {
-      return "【APIキーエラー】設定されたキーが無効です。Secretsに正しいキーが保存されているか確認してください。";
+    if (!response || !response.text) {
+      throw new Error("AIの応答が空でした。");
     }
-    return `【解析失敗】通信エラーが発生しました。インターネット接続を確認してください。(${error.message || "Unknown error"})`;
+
+    return response.text;
+    
+  } catch (error: any) {
+    console.error("DEBUG - API Error Details:", error);
+    
+    // Googleから返ってきた生のメッセージを解析
+    const rawMessage = error.message || "";
+    
+    if (rawMessage.includes("API key not valid")) {
+      return "【Googleの回答：APIキーが無効です】\n" +
+             "入力されたAPIキーが間違っているか、Google側でまだ有効化されていません。AI Studioで新しいキーを作成してみてください。";
+    }
+    
+    if (rawMessage.includes("403")) {
+      return "【Googleの回答：アクセス拒否 (403)】\n" +
+             "APIキーの権限が足りないか、お使いの地域ではこのモデル（Gemini 3）が制限されている可能性があります。";
+    }
+
+    if (rawMessage.includes("model")) {
+      return "【Googleの回答：モデルエラー】\n" +
+             "指定したモデル（gemini-3-flash-preview）が見つかりません。APIキーが最新モデルに対応しているか確認してください。";
+    }
+
+    return `【API通信エラー】\n理由: ${rawMessage}\n\n※このメッセージが表示される場合、通信は行われていますが、Google側で拒否されています。`;
   }
 };
