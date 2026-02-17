@@ -10,22 +10,26 @@ export const analyzeStepData = async (patient: PatientRecord, step: TreatmentSte
     // Vercelから渡される環境変数を取得
     let apiKey = process.env.API_KEY;
 
-    // 前後の空白文字や改行を完全に除去（コピーミス対策）
-    apiKey = apiKey?.trim();
+    // 前後の空白や見えない文字を徹底的に除去
+    apiKey = apiKey?.trim().replace(/['"]/g, '');
 
-    // 診断1: キーが存在しない
-    if (!apiKey || apiKey === "undefined" || apiKey === "") {
-      throw new Error("APIキーが見つかりません。VercelのEnvironment Variablesに 'API_KEY' が設定されているか、設定後に『Redeploy』したか確認してください。");
-    }
+    // デバッグ用のヒント（最初と最後の4文字だけ抽出）
+    const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "なし";
+    const keyLength = apiKey?.length || 0;
 
-    // 診断2: キーが短すぎる
-    if (apiKey.length < 20) {
-      throw new Error(`設定されているキーが短すぎます（現在の長さ: ${apiKey.length}文字）。正しいキーをコピーできているか確認してください。`);
+    // 診断: キーが明らかに短い（Geminiのキーは通常39文字程度です）
+    if (!apiKey || keyLength < 25) {
+      throw new Error(`APIキーが正しく読み込めていません。
+現在の長さ: ${keyLength}文字
+現在のキーの断片: ${keyHint}
+
+【確認してください】
+あなたが設定したキー (${keyLength}文字) は短すぎます。Geminiのキーは通常39文字です。
+Vercelの環境変数 'API_KEY' に、途中で切れていない正しいキーが保存されているか再確認してください。`);
     }
 
     const ai = new GoogleGenAI({ apiKey: apiKey });
     
-    // 画像データの抽出
     const images = step.files.filter(f => f.type === 'image').slice(0, 3);
     const parts: any[] = [];
     
@@ -41,8 +45,8 @@ export const analyzeStepData = async (patient: PatientRecord, step: TreatmentSte
     }
 
     parts.push({
-      text: `あなたは歯科臨床アドバイザーです。以下の内容を分析しアドバイスしてください。
-患者情報: ${patient.name} 様 / ${patient.profileNotes || "特になし"}
+      text: `歯科臨床アドバイザーとして分析してください。
+患者: ${patient.name} 様
 工程: ${step.label}
 メモ: ${step.notes || "なし"}`
     });
@@ -55,23 +59,23 @@ export const analyzeStepData = async (patient: PatientRecord, step: TreatmentSte
     return response.text;
     
   } catch (error: any) {
-    console.error("Critical AI Error:", error);
+    console.error("AI Analysis Error:", error);
     
-    // 特定のエラーに対する詳細なガイド
-    if (error.message.includes("API key not valid") || error.message.includes("400")) {
-      return `【APIキー無効】認証に失敗しました。
+    // エラーメッセージの構築
+    const apiKey = process.env.API_KEY?.trim() || "";
+    const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "未設定";
 
-■ 可能性が高い原因：
-「Firebaseのキー」を Geminiのキーとして設定していませんか？
+    return `【設定エラー】AIが起動できません。
 
-■ 解決策：
-1. Google AI Studio (aistudio.google.com) の『Get API key』から取得したキーを使っているか再確認。
-2. Vercelで API_KEY を保存した後、必ず【Redeploy（再デプロイ）】を完了させてください。
+■ 現在の状況：
+・認識しているキーの長さ: ${apiKey.length}文字
+・キーの断片: ${keyHint}
 
-※現在のアプリが認識しているキーの長さ: ${process.env.API_KEY?.trim()?.length || 0}文字`;
-    }
+■ 解決のためのチェック：
+1. 表示されている『キーの断片』は、あなたが Google AI Studio で取得したキーと一致しますか？
+2. もし一致しない、あるいは短すぎる場合、Vercelの『Settings > Environment Variables』で 'API_KEY' の値を一度削除し、もう一度丁寧に貼り付け直してください。
+3. 貼り付け直し、保存した後、必ず【Deployments画面からRedeploy】を実行してください。
 
-    return `【システムエラー】
-${error.message}`;
+詳細エラー: ${error.message}`;
   }
 };
