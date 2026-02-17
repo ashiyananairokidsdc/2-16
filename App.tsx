@@ -212,7 +212,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const completedCount = patient.plan.filter(s => s.status === '完了').length;
   const progressPercent = patient.plan.length > 0 ? Math.round((completedCount / patient.plan.length) * 100) : 0;
 
-  // 汎用的な更新（メモやファイルなど）
   const handleUpdateStep = (updates: Partial<TreatmentStep>) => {
     const newPlan = patient.plan.map(s => {
       if (s.id === activeId) {
@@ -223,11 +222,10 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
     onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
   };
 
-  // ステータス変更時の特別ロジック（担当者を更新する）
   const handleStatusChange = (newStatus: PStepStatus) => {
     const newPlan = patient.plan.map(s => {
       if (s.id === activeId) {
-        // ステータスが変更されたら、現在のユーザーを「担当者」として記録
+        // ステータスを更新すると同時に、現在のユーザーを「担当者」として記録
         return { ...s, status: newStatus, updatedBy: currentUser.name };
       }
       return s;
@@ -395,6 +393,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                       ) : (
                         <div className="flex justify-between items-center gap-2">
                           <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
+                          {/* 変更：未着手以外の場合のみ、担当者のフルネームを表示 */}
                           {s.updatedBy && s.status !== PStepStatus.PENDING && (
                             <span className="text-[9px] text-slate-400 font-medium shrink-0 animate-in fade-in duration-500">
                               {s.updatedBy}
@@ -428,6 +427,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                   <h3 className="text-lg font-bold text-slate-800">{activeStep.label}</h3>
                   <div className="flex items-center gap-2 mt-0.5">
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス設定</p>
+                     {/* 変更：ラベルを「担当者」に変更 */}
                      {activeStep.updatedBy && (
                        <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 animate-in fade-in zoom-in duration-300">
                          <UserCheck size={10} className="mr-1" /> 担当者: {activeStep.updatedBy}
@@ -501,12 +501,12 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                   ) : <><Database size={18} className="mr-2 text-blue-400" /> AI臨床アドバイザーに相談</>}
                 </button>
                 {aiResult && (
-                  <div className={`mt-6 p-6 border rounded-2xl text-sm whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative ${aiResult.includes("【重要：APIキー") ? "bg-red-50 border-red-100 text-red-900" : "bg-blue-50/30 border-blue-100 text-slate-700"}`}>
+                  <div className="mt-6 p-6 bg-blue-50/30 border border-blue-100 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative text-slate-700">
                     <div className="flex items-center gap-2 mb-3">
-                       <div className={`${aiResult.includes("【重要：APIキー") ? "bg-red-600" : "bg-blue-600"} p-1.5 rounded-lg text-white`}>
+                       <div className="bg-blue-600 p-1.5 rounded-lg text-white">
                          <Database size={14} />
                        </div>
-                       <p className="font-bold text-[11px] uppercase tracking-widest">{aiResult.includes("【重要：APIキー") ? "システムアラート" : "AI分析レポート"}</p>
+                       <p className="font-bold text-[11px] uppercase tracking-widest">AI分析レポート</p>
                     </div>
                     <div className="text-sm prose prose-slate max-w-none">
                       {aiResult}
@@ -639,6 +639,7 @@ export default function App() {
                 <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px]">
                    {user.name.charAt(0)}
                 </div>
+                {/* 変更：敬称「先生」を削除 */}
                 {user.name}
               </div>
               <div className="flex items-center gap-2">

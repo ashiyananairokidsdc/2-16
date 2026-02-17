@@ -2,17 +2,33 @@
 import { GoogleGenAI } from "@google/genai";
 import { TreatmentStep, PatientRecord } from "./types.ts";
 
-// Function to analyze patient data using Gemini AI
+/**
+ * 歯科専門AIアドバイザーによる症例分析
+ */
 export const analyzeStepData = async (patient: PatientRecord, step: TreatmentStep) => {
   try {
-    // Initialize Gemini API client as per guidelines.
-    // The API key must be obtained from process.env.API_KEY.
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+    // Vercelから渡される環境変数を取得
+    let apiKey = process.env.API_KEY;
+
+    // 前後の空白文字や改行を完全に除去（コピーミス対策）
+    apiKey = apiKey?.trim();
+
+    // 診断1: キーが存在しない
+    if (!apiKey || apiKey === "undefined" || apiKey === "") {
+      throw new Error("APIキーが見つかりません。VercelのEnvironment Variablesに 'API_KEY' が設定されているか、設定後に『Redeploy』したか確認してください。");
+    }
+
+    // 診断2: キーが短すぎる
+    if (apiKey.length < 20) {
+      throw new Error(`設定されているキーが短すぎます（現在の長さ: ${apiKey.length}文字）。正しいキーをコピーできているか確認してください。`);
+    }
+
+    const ai = new GoogleGenAI({ apiKey: apiKey });
     
+    // 画像データの抽出
     const images = step.files.filter(f => f.type === 'image').slice(0, 3);
     const parts: any[] = [];
     
-    // Add image parts if available
     for (const img of images) {
       if (img.url.includes(',')) {
         parts.push({
@@ -24,27 +40,38 @@ export const analyzeStepData = async (patient: PatientRecord, step: TreatmentSte
       }
     }
 
-    // Add text prompt part
     parts.push({
-      text: `歯科専門AIアドバイザーとして以下の情報を分析し、日本語で回答してください。
-患者: ${patient.name}
+      text: `あなたは歯科臨床アドバイザーです。以下の内容を分析しアドバイスしてください。
+患者情報: ${patient.name} 様 / ${patient.profileNotes || "特になし"}
 工程: ${step.label}
-処置メモ: ${step.notes || "なし"}
-患者特記事項: ${patient.profileNotes || "なし"}`
+メモ: ${step.notes || "なし"}`
     });
 
-    // Use ai.models.generateContent to query the model
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: { parts },
     });
 
-    // Extract text output from response.text property
-    return response.text || "AIからの応答が空でした。";
+    return response.text;
     
   } catch (error: any) {
-    console.error("Gemini API Error:", error);
-    // Graceful error handling for API calls
-    return `【分析エラー】AIとの通信中に問題が発生しました。しばらく待ってから再度お試しください。\n詳細: ${error.message}`;
+    console.error("Critical AI Error:", error);
+    
+    // 特定のエラーに対する詳細なガイド
+    if (error.message.includes("API key not valid") || error.message.includes("400")) {
+      return `【APIキー無効】認証に失敗しました。
+
+■ 可能性が高い原因：
+「Firebaseのキー」を Geminiのキーとして設定していませんか？
+
+■ 解決策：
+1. Google AI Studio (aistudio.google.com) の『Get API key』から取得したキーを使っているか再確認。
+2. Vercelで API_KEY を保存した後、必ず【Redeploy（再デプロイ）】を完了させてください。
+
+※現在のアプリが認識しているキーの長さ: ${process.env.API_KEY?.trim()?.length || 0}文字`;
+    }
+
+    return `【システムエラー】
+${error.message}`;
   }
 };
