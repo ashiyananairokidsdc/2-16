@@ -7,27 +7,36 @@ import { TreatmentStep, PatientRecord } from "./types.ts";
  */
 export const analyzeStepData = async (patient: PatientRecord, step: TreatmentStep) => {
   try {
-    // Vercelから渡される環境変数を取得
+    // 1. 環境変数の取得
     let apiKey = process.env.API_KEY;
 
-    // 前後の空白や見えない文字を徹底的に除去
+    // 2. 前後の不要な記号や空白を完全に除去
     apiKey = apiKey?.trim().replace(/['"]/g, '');
 
-    // デバッグ用のヒント（最初と最後の4文字だけ抽出）
-    const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "なし";
-    const keyLength = apiKey?.length || 0;
+    // 3. 特殊なケース：プレースホルダー（ダミー文字）のチェック
+    const isPlaceholder = apiKey === "PLACEHOLDER_API_KEY" || apiKey?.includes("PLACEHOLDER");
 
-    // 診断: キーが明らかに短い（Geminiのキーは通常39文字程度です）
-    if (!apiKey || keyLength < 25) {
-      throw new Error(`APIキーが正しく読み込めていません。
-現在の長さ: ${keyLength}文字
-現在のキーの断片: ${keyHint}
+    if (isPlaceholder) {
+      throw new Error(`【ダミー設定が検出されました】
+現在、環境変数 API_KEY の値が本物のキーではなく、"${apiKey}" という『仮の文字列』になっています。
 
-【確認してください】
-あなたが設定したキー (${keyLength}文字) は短すぎます。Geminiのキーは通常39文字です。
-Vercelの環境変数 'API_KEY' に、途中で切れていない正しいキーが保存されているか再確認してください。`);
+■ 対処法：
+Vercelの『Settings > Environment Variables』を確認してください。
+'API_KEY' という名前の設定が複数ありませんか？
+また、その値が間違いなく 'AIza...' で始まっているか、もう一度上書きして保存し、『Redeploy』を実行してください。`);
     }
 
+    // 4. 長さチェック
+    const keyLength = apiKey?.length || 0;
+    if (!apiKey || keyLength < 25) {
+      const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "なし";
+      throw new Error(`APIキーが正しく読み込めていません。
+現在の値: ${apiKey} (長さ: ${keyLength}文字)
+
+正しいキーを設定しているはずなのにこのエラーが出る場合、Vercel側で『Production』以外の環境（Preview等）にチェックが入っていない可能性があります。`);
+    }
+
+    // 5. AIクライアントの初期化（ここまで来れば正規のキーのはず）
     const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const images = step.files.filter(f => f.type === 'image').slice(0, 3);
@@ -45,10 +54,10 @@ Vercelの環境変数 'API_KEY' に、途中で切れていない正しいキー
     }
 
     parts.push({
-      text: `歯科臨床アドバイザーとして分析してください。
-患者: ${patient.name} 様
+      text: `歯科臨床アドバイザーとして以下の処置内容を分析し、日本語でアドバイスしてください。
+患者: ${patient.name} 様 / 特記事項: ${patient.profileNotes || "特になし"}
 工程: ${step.label}
-メモ: ${step.notes || "なし"}`
+実施メモ: ${step.notes || "なし"}`
     });
 
     const response = await ai.models.generateContent({
@@ -59,23 +68,11 @@ Vercelの環境変数 'API_KEY' に、途中で切れていない正しいキー
     return response.text;
     
   } catch (error: any) {
-    console.error("AI Analysis Error:", error);
+    console.error("AI Analysis Critical Error:", error);
     
-    // エラーメッセージの構築
-    const apiKey = process.env.API_KEY?.trim() || "";
-    const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "未設定";
+    return `【設定の不整合を検出】
+${error.message}
 
-    return `【設定エラー】AIが起動できません。
-
-■ 現在の状況：
-・認識しているキーの長さ: ${apiKey.length}文字
-・キーの断片: ${keyHint}
-
-■ 解決のためのチェック：
-1. 表示されている『キーの断片』は、あなたが Google AI Studio で取得したキーと一致しますか？
-2. もし一致しない、あるいは短すぎる場合、Vercelの『Settings > Environment Variables』で 'API_KEY' の値を一度削除し、もう一度丁寧に貼り付け直してください。
-3. 貼り付け直し、保存した後、必ず【Deployments画面からRedeploy】を実行してください。
-
-詳細エラー: ${error.message}`;
+※Vercelの画面で、今一度 'API_KEY' の値そのものをコピー＆ペーストし直して保存し、再デプロイしてください。`;
   }
 };
