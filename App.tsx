@@ -8,7 +8,6 @@ import {
   ArrowUp, ArrowDown, Layout, Settings2, Info, UserCheck, ShieldAlert, RefreshCw, Loader2
 } from 'lucide-react';
 import { PatientRecord, TreatmentStep, PStepStatus, DEFAULT_P_FLOW, PatientFile, User } from './types.ts';
-import { analyzeStepData } from './geminiService.ts';
 import { syncToGoogleSheet } from './sheetService.ts';
 
 // --- Firebase Setup ---
@@ -188,9 +187,7 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const navigate = useNavigate();
   const patient = patients.find(p => p.id === id);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [aiResult, setAiResult] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isPlanEditMode, setIsPlanEditMode] = useState(false);
@@ -225,7 +222,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const handleStatusChange = (newStatus: PStepStatus) => {
     const newPlan = patient.plan.map(s => {
       if (s.id === activeId) {
-        // ステータスを更新すると同時に、現在のユーザーを「担当者」として記録
         return { ...s, status: newStatus, updatedBy: currentUser.name };
       }
       return s;
@@ -277,20 +273,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
       img.src = reader.result as string;
     };
     reader.readAsDataURL(file);
-  };
-
-  const runAi = async () => {
-    setIsAnalyzing(true);
-    setAiResult(null);
-    try {
-      const res = await analyzeStepData(patient, activeStep);
-      setAiResult(res);
-    } catch (e: any) {
-      console.error(e);
-      setAiResult(`【アプリエラー】解析実行中に予期せぬ不具合が発生しました。\n詳細: ${e.message}`);
-    } finally {
-      setIsAnalyzing(false);
-    }
   };
 
   return (
@@ -393,7 +375,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                       ) : (
                         <div className="flex justify-between items-center gap-2">
                           <p className={`text-xs font-bold truncate ${activeId === s.id ? 'text-blue-700' : 'text-slate-700'}`}>{s.label}</p>
-                          {/* 変更：未着手以外の場合のみ、担当者のフルネームを表示 */}
                           {s.updatedBy && s.status !== PStepStatus.PENDING && (
                             <span className="text-[9px] text-slate-400 font-medium shrink-0 animate-in fade-in duration-500">
                               {s.updatedBy}
@@ -427,7 +408,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                   <h3 className="text-lg font-bold text-slate-800">{activeStep.label}</h3>
                   <div className="flex items-center gap-2 mt-0.5">
                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ステータス設定</p>
-                     {/* 変更：ラベルを「担当者」に変更 */}
                      {activeStep.updatedBy && (
                        <span className="text-[9px] font-bold text-blue-500 flex items-center bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100 animate-in fade-in zoom-in duration-300">
                          <UserCheck size={10} className="mr-1" /> 担当者: {activeStep.updatedBy}
@@ -489,30 +469,6 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                     )}
                   </div>
                 </div>
-              </div>
-
-              <div className="pt-8 border-t border-slate-100">
-                <button 
-                  onClick={runAi} disabled={isAnalyzing}
-                  className="w-full bg-slate-900 text-white py-4 rounded-2xl font-bold flex items-center justify-center hover:bg-black transition-all shadow-md active:scale-[0.99] disabled:opacity-50"
-                >
-                  {isAnalyzing ? (
-                    <div className="flex items-center"><RefreshCw size={18} className="animate-spin mr-2" /> AIがデータを解析しています...</div>
-                  ) : <><Database size={18} className="mr-2 text-blue-400" /> AI臨床アドバイザーに相談</>}
-                </button>
-                {aiResult && (
-                  <div className="mt-6 p-6 bg-blue-50/30 border border-blue-100 rounded-2xl text-sm whitespace-pre-wrap leading-relaxed animate-in slide-in-from-top-2 duration-300 relative text-slate-700">
-                    <div className="flex items-center gap-2 mb-3">
-                       <div className="bg-blue-600 p-1.5 rounded-lg text-white">
-                         <Database size={14} />
-                       </div>
-                       <p className="font-bold text-[11px] uppercase tracking-widest">AI分析レポート</p>
-                    </div>
-                    <div className="text-sm prose prose-slate max-w-none">
-                      {aiResult}
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           </div>
@@ -639,7 +595,6 @@ export default function App() {
                 <div className="w-5 h-5 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-[10px]">
                    {user.name.charAt(0)}
                 </div>
-                {/* 変更：敬称「先生」を削除 */}
                 {user.name}
               </div>
               <div className="flex items-center gap-2">

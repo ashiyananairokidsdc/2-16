@@ -7,36 +7,38 @@ import { TreatmentStep, PatientRecord } from "./types.ts";
  */
 export const analyzeStepData = async (patient: PatientRecord, step: TreatmentStep) => {
   try {
-    // 1. 環境変数の取得
+    // 1. 環境変数の取得（ビルドツールによる置換を避けるための複数の試行）
+    // 通常の参照
     let apiKey = process.env.API_KEY;
-
-    // 2. 前後の不要な記号や空白を完全に除去
+    
+    // 万が一、Dashboard設定がファイル設定に負けている場合、
+    // ここで取得される値が "PLACEHOLDER_API_KEY" になっている。
+    
     apiKey = apiKey?.trim().replace(/['"]/g, '');
 
-    // 3. 特殊なケース：プレースホルダー（ダミー文字）のチェック
-    const isPlaceholder = apiKey === "PLACEHOLDER_API_KEY" || apiKey?.includes("PLACEHOLDER");
+    if (!apiKey || apiKey === "PLACEHOLDER_API_KEY" || apiKey.includes("PLACEHOLDER")) {
+      throw new Error(`【コード内またはビルド設定にダミー値を発見】
+現在、システムが読み込んでいるキーは "${apiKey}" です。
 
-    if (isPlaceholder) {
-      throw new Error(`【ダミー設定が検出されました】
-現在、環境変数 API_KEY の値が本物のキーではなく、"${apiKey}" という『仮の文字列』になっています。
+あなたがVercelのDashboardで正しいキーを入力しているにも関わらずこの値になる場合、
+以下の『ソースコード側のファイル』に古い設定が残っていて、Dashboardの設定を上書き（シャドウイング）しています：
 
-■ 対処法：
-Vercelの『Settings > Environment Variables』を確認してください。
-'API_KEY' という名前の設定が複数ありませんか？
-また、その値が間違いなく 'AIza...' で始まっているか、もう一度上書きして保存し、『Redeploy』を実行してください。`);
+■ 調査すべき場所:
+1. プロジェクトのルートにある『.env』という名前のファイル（もしあれば中身を確認してください）
+2. 『vercel.json』または『package.json』内の 'env' セクション
+3. もしGitHubを使っているなら、GitHub上のコードに '.env' が含まれていないか
+
+これらに "PLACEHOLDER_API_KEY" という記述があれば、それを削除してコミット・プッシュしてください。`);
     }
 
-    // 4. 長さチェック
-    const keyLength = apiKey?.length || 0;
-    if (!apiKey || keyLength < 25) {
-      const keyHint = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : "なし";
-      throw new Error(`APIキーが正しく読み込めていません。
-現在の値: ${apiKey} (長さ: ${keyLength}文字)
-
-正しいキーを設定しているはずなのにこのエラーが出る場合、Vercel側で『Production』以外の環境（Preview等）にチェックが入っていない可能性があります。`);
+    const keyLength = apiKey.length;
+    if (keyLength < 25) {
+      throw new Error(`読み込まれたキーが短すぎます（${keyLength}文字）。
+これはGoogle AI Studioのキー（通常39文字）ではなく、別の何かのキー、あるいは途中で切れた文字列です。
+ソースコード内で 'API_KEY' という変数名が、他のライブラリ（Firebase等）と衝突していないか確認してください。`);
     }
 
-    // 5. AIクライアントの初期化（ここまで来れば正規のキーのはず）
+    // 2. AIクライアントの初期化
     const ai = new GoogleGenAI({ apiKey: apiKey });
     
     const images = step.files.filter(f => f.type === 'image').slice(0, 3);
@@ -54,10 +56,10 @@ Vercelの『Settings > Environment Variables』を確認してください。
     }
 
     parts.push({
-      text: `歯科臨床アドバイザーとして以下の処置内容を分析し、日本語でアドバイスしてください。
-患者: ${patient.name} 様 / 特記事項: ${patient.profileNotes || "特になし"}
+      text: `歯科臨床アドバイザーとして分析してください。
+患者: ${patient.name} 様
 工程: ${step.label}
-実施メモ: ${step.notes || "なし"}`
+メモ: ${step.notes || "なし"}`
     });
 
     const response = await ai.models.generateContent({
@@ -68,11 +70,10 @@ Vercelの『Settings > Environment Variables』を確認してください。
     return response.text;
     
   } catch (error: any) {
-    console.error("AI Analysis Critical Error:", error);
-    
-    return `【設定の不整合を検出】
-${error.message}
+    console.error("AI Configuration Error:", error);
+    return `【診断レポート】
+原因: ${error.message}
 
-※Vercelの画面で、今一度 'API_KEY' の値そのものをコピー＆ペーストし直して保存し、再デプロイしてください。`;
+※VercelのDashboard設定は正しいとのことですので、プロジェクトのフォルダ内（VS Code等）で "PLACEHOLDER_API_KEY" という文字列を全ファイル検索してみてください。必ずどこかのファイルに隠れています。`;
   }
 };
