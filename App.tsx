@@ -192,6 +192,9 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isPlanEditMode, setIsPlanEditMode] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Partial<PatientRecord>>({});
+  
+  // --- Fix: Memo Input State ---
+  const [localNotes, setLocalNotes] = useState('');
 
   useEffect(() => {
     if (patient) {
@@ -201,6 +204,14 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
       setEditingPatient(patient);
     }
   }, [patient, activeId]);
+
+  // 工程が切り替わった時にメモを同期
+  useEffect(() => {
+    if (patient && activeId) {
+      const step = patient.plan.find(s => s.id === activeId);
+      setLocalNotes(step?.notes || '');
+    }
+  }, [activeId]);
 
   if (!patient) return <div className="flex items-center justify-center h-64"><Loader2 className="animate-spin text-blue-500" /></div>;
 
@@ -219,7 +230,15 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
     onUpdate({ ...patient, plan: newPlan, lastVisit: new Date().toLocaleDateString('ja-JP') });
   };
 
+  // メモの保存処理（Blur時または切り替え時に明示的に呼ぶ）
+  const syncLocalNotes = () => {
+    if (localNotes !== activeStep.notes) {
+      handleUpdateStep({ notes: localNotes });
+    }
+  };
+
   const handleStatusChange = (newStatus: PStepStatus) => {
+    syncLocalNotes(); // ステータス変更前にも念のため保存
     const newPlan = patient.plan.map(s => {
       if (s.id === activeId) {
         return { ...s, status: newStatus, updatedBy: currentUser.name };
@@ -335,7 +354,10 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                 <Settings2 size={14} className="mr-2" /> 治療ロードマップ
               </h3>
               <button 
-                onClick={() => setIsPlanEditMode(!isPlanEditMode)}
+                onClick={() => {
+                  if (!isPlanEditMode) syncLocalNotes(); // 編集モードに入る前にメモ保存
+                  setIsPlanEditMode(!isPlanEditMode);
+                }}
                 className={`text-[10px] font-bold px-2.5 py-1 rounded-lg transition-all ${isPlanEditMode ? 'bg-green-600 text-white shadow-sm' : 'text-blue-600 hover:bg-blue-50'}`}
               >
                 {isPlanEditMode ? '編集を保存' : '工程の並替'}
@@ -347,7 +369,12 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
               
               {patient.plan.map((s, i) => (
                 <div key={s.id} className="relative group">
-                  <div className={`flex items-center gap-3 py-1.5 transition-all ${isPlanEditMode ? '' : 'cursor-pointer'}`} onClick={() => !isPlanEditMode && setActiveId(s.id)}>
+                  <div className={`flex items-center gap-3 py-1.5 transition-all ${isPlanEditMode ? '' : 'cursor-pointer'}`} onClick={() => {
+                    if (!isPlanEditMode) {
+                      syncLocalNotes(); // 切り替え前に現在のメモを保存
+                      setActiveId(s.id);
+                    }
+                  }}>
                     <div className={`relative z-10 w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-all ${
                       s.status === '完了' ? 'bg-green-500 border-green-500 text-white' : 
                       s.status === '実施中' ? 'bg-blue-600 border-blue-600 text-white shadow-lg shadow-blue-100 ring-4 ring-blue-50' : 
@@ -436,9 +463,15 @@ const PatientDetail = ({ patients, onUpdate, currentUser }: { patients: PatientR
                   <textarea 
                     className="w-full h-[300px] p-5 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-4 focus:ring-blue-50 outline-none transition-all text-sm leading-relaxed"
                     placeholder="プラークコントロール状態、PPDの変化、処置中に気付いたことなどを詳しく記録..."
-                    value={activeStep.notes}
-                    onChange={e => handleUpdateStep({ notes: e.target.value })}
+                    value={localNotes}
+                    onChange={e => setLocalNotes(e.target.value)}
+                    onBlur={syncLocalNotes}
                   />
+                  <div className="flex justify-end">
+                    <p className="text-[9px] text-slate-300 font-bold uppercase tracking-widest">
+                      フォーカスが外れると自動保存されます
+                    </p>
+                  </div>
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center">
